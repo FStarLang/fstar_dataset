@@ -1,0 +1,7 @@
+(lang dune 3.2)
+(name fstar_insights)
+(generate_opam_files false)
+(package
+  (name fstar_insights)
+  (synopsis "A tool to read F* checked files and run various queries")
+)

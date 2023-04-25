@@ -1,0 +1,12 @@
+(include_subdirs unqualified)
+(executable
+ (name QueryCheckedFile)
+ (public_name fstar_insights.exe)
+ (libraries
+    batteries
+    fstar.lib
+ )
+ (flags (:standard -w -A))
+ (link_flags "-linkall")
+ (modes (native exe))
+)
