@@ -62,11 +62,11 @@ let is_simple_definition (t:term) : ML bool =
     | Tm_arrow _
     | Tm_refine _
     | Tm_quoted _ -> true
-    | Tm_app(_, args) ->
+    | Tm_app { args } ->
       List.for_all (fun (x, _) -> aux x) args
-    | Tm_let((false, [lb]), body) ->
+    | Tm_let { lbs=(false, [lb]); body } ->
       aux lb.lbdef && aux body
-    | Tm_meta(t, _) ->
+    | Tm_meta { tm=t } ->
       aux t
     | _ -> false
   in
@@ -74,16 +74,16 @@ let is_simple_definition (t:term) : ML bool =
 
 let is_simple_lemma (se:sigelt) =
   match se.sigel with
-  | Sig_let ((false, [lb]), [name]) ->
+  | Sig_let { lbs=(false, [lb]); lids=[name] } ->
     is_lemma_arrow lb.lbtyp &&
     is_simple_definition lb.lbdef
   | _ -> false
 
 let check_type (se:sigelt) (f:typ -> bool) =
   match se.sigel with
-  | Sig_let ((_, lbs), _) ->
+  | Sig_let { lbs=(_, lbs) } ->
     BU.for_all (fun lb -> f lb.lbtyp) lbs
-  | Sig_declare_typ(_, _, t) -> f t
+  | Sig_declare_typ { t } -> f t
   | _ -> false
 
 let is_sigelt_tot (se:sigelt) = check_type se is_tot_arrow
@@ -182,7 +182,7 @@ let dependences_of_definition (source_file:string) (name:string)
       | [] -> List.rev out
       | se :: ses -> (
         match se.sigel with
-        | Sig_let (_, names) ->
+        | Sig_let { lids = names } ->
           if BU.for_some (Ident.lid_equals name) names
           then List.rev out //found it
           else prefix_until_name (se :: out) ses
@@ -231,7 +231,7 @@ let simple_lemma_as_json
       (se:sigelt)
  : json
  = match se.sigel with
-   | Sig_let((_, [lb]), [name]) -> 
+   | Sig_let { lbs=(_, [lb]); lids=[name] } -> 
      let name = JsonStr (Ident.string_of_lid name) in
      let lemma_statement = FStar.Syntax.Print.term_to_string lb.lbtyp in
      let criterion = JsonStr "simple lemma" in
@@ -246,8 +246,8 @@ let dep_as_json (se:sigelt)
   = let rng = range_as_json_list se.sigrng in
     let with_name lid = JsonAssoc (["name", JsonStr (Ident.string_of_lid lid)]@rng) in
     match se.sigel with
-    | Sig_let(_, names) -> List.map with_name names
-    | Sig_declare_typ(name, _, t) -> [with_name name]
+    | Sig_let { lids=names } -> List.map with_name names
+    | Sig_declare_typ { lid=name; t } -> [with_name name]
     | _ -> []
 
 let dump_simple_lemmas_as_json (source_file:string)
