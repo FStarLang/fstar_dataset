@@ -1,6 +1,7 @@
+
+import sys
 import subprocess
 import json
-
 # A sample scaffoling from a benchmark instance
 # { id:1,
 #   types: [ "t1", "t2" ],
@@ -90,7 +91,8 @@ def read_full_buffer_response(fstar_process):
             print("F* process terminated")
             break
         line = fstar_process.stdout.readline()
-        print("Line from F*: " + line)
+        # print a line to stderr for debugging
+        print("Line from F*: " + line, file=sys.stderr)
         response = response + line
         resp = json.loads(line)
         json_objects.append(resp)
@@ -113,15 +115,15 @@ def check_solution(fstar_process, solution):
     # Validate the response
     return validate_fstar_response(response_objects)
 
-# Launch an F* process for a benchmark and a given solution string
-def check_function_comp_with_fstar(bench, solution):
-    (scaffolding, sol) = generate_scaffolding_for_function_composition(bench)
-    contents = scaffolding + sol + solution + "\n"
-    json_contents = json.dumps(contents)
-    request = f'{{"query-id":"2", "query": "full-buffer", "args":{{"kind": "full", "with-symbols":false, "code": {json_contents}, "line":1, "column":0}}}}\n'
-    fstar_process.stdin.write(request)
-    fstar_process.stdin.flush()
-    # Read the response from stdout
+# # Launch an F* process for a benchmark and a given solution string
+# def check_function_comp_with_fstar(bench, solution):
+#     (scaffolding, sol) = generate_scaffolding_for_function_composition(bench)
+#     contents = scaffolding + sol + solution + "\n"
+#     json_contents = json.dumps(contents)
+#     request = f'{{"query-id":"2", "query": "full-buffer", "args":{{"kind": "full", "with-symbols":false, "code": {json_contents}, "line":1, "column":0}}}}\n'
+#     fstar_process.stdin.write(request)
+#     fstar_process.stdin.flush()
+#     # Read the response from stdout
     response_objects = read_full_buffer_response()
     # Validate the response
     return validate_fstar_response(response_objects, contents)

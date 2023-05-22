@@ -2,6 +2,22 @@ import json
 import subprocess
 import os
 import sys
+import openai
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def call_model(prompt): 
+    result = openai.Completion.create(
+        model="text-davinci-003",
+        prompt=prompt,
+        max_tokens=1024,
+        temperature=0.2
+    )
+    print(result)
+    return result.choices[0].text
+
+#call_model ("Tell me a joke")
+
 
 fstar_insights_exe="fstar_insights/ocaml/bin/fstar_insights.exe"
 # read the environment variable FSTAR_HOME
@@ -104,7 +120,7 @@ def process_response(resp):
         end_line = entry["end_line"]
         end_column = entry["end_col"]
         text = get_text_between_positions(file_name, start_line, start_column, end_line, end_column)
-        print(f'Text between positions: {file_name}@{start_line},{start_column}-{end_line},{end_column}=\n{text}\n')
+        #print(f'Text between positions: {file_name}@{start_line},{start_column}-{end_line},{end_column}=\n{text}\n')
         content.append(text)
     return content
 
@@ -142,16 +158,31 @@ def send_one_query_to_fstar_insights(fstar_insights_process, entry):
 
 import FStarHarness as FH
 
+def prepare_prompt(context, goal):
+    prompt = "This is a problem in the F* programming language.\n\n Can you write a proof of the goal lemma below?\n\n"
+    prompt += "The goal is <GOAL>\n\n val goal : " + goal + "\n\n</GOAL>\n\n"
+    prompt += "\n\nYou can use some other lemmas and functions in the context, <CONTEXT>\n\n"
+    while (len(prompt) < 1024 and len(context) > 0):
+        prompt = prompt + context.pop(0) + "\n"
+    prompt += "\n\n</CONTEXT>\n\n"
+    prompt += "Your solution should look like this: let goal = <YOUR PROOF HERE>\n\n"
+    print("<SAMPLE PROMPT>" +prompt+ "</SAMPLE PROMPT>")
+    return prompt
+
 def process_one_instance(fstar_insights_process, entry):
+    print("Attempting lemma " + entry["name"])
     (context, goal) = send_one_query_to_fstar_insights(fstar_insights_process, entry)
+    print(f'Context: {context}\n\n Goal is: {goal}\n')
     module_name = entry["source_file"]
     # strip the .fst extension
     module_name = module_name[:-4]
     lemma_statement = entry["lemma_statement"]
     goal_statement = f'val goal : {lemma_statement}'
     file_name, scaffolding = FH.generate_harness_for_lemma(module_name, [module_name], goal_statement)
-    fstar_process = FH.launch_fstar(file_name)    
-    solution = f'{scaffolding}\nlet goal = admit()\n'
+    fstar_process = FH.launch_fstar(file_name)  
+    prompt = prepare_prompt(context, goal) 
+    proposed_solution = call_model(prompt) #"let goal = admit()\n" #instead of placeholder, get a suggestion from LLM
+    solution = f'{scaffolding}\n{proposed_solution}\n'
     result = FH.check_solution(fstar_process, solution)
     print(f'Got result {result}')
 
@@ -162,6 +193,13 @@ def send_queries_to_fstar_insights(fstar_insights_process, json_data):
         # send the query to fstar insights
         process_one_instance(fstar_insights_process, entry)
 
+# if the number of command line arguments is not 2, print an error message and exit
+# the first argument is the name of the script
+# the second argument is the name of the json file
+if len(sys.argv) != 2:
+    print("Usage: python3 fstar_insights.py <json_file>")
+    exit(1)
+     
 # read the json file specified on the first command line argument
 json_data = read_json_file(sys.argv[1])
 # launch fstar insights
