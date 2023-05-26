@@ -3,21 +3,32 @@ import subprocess
 import os
 import sys
 import openai
+import re
+import tiktoken
 
+encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def call_model(prompt): 
-    result = openai.Completion.create(
-        model="text-davinci-003",
-        prompt=prompt,
-        max_tokens=1024,
-        temperature=0.2
-    )
-    print(result)
-    return result.choices[0].text
+def maybe_extend_prompt(prompt, rest_of_prompt, config):
+    next_prompt = prompt + "\n" +rest_of_prompt
+    encoded_prompt = encoding.encode(next_prompt)
+    if len(encoded_prompt) < config["input_token_limit"]:
+        return next_prompt
+    else:
+        return None
 
-#call_model ("Tell me a joke")
-
+def call_model(prompt, config):
+    try:
+        result = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=prompt,
+            max_tokens=config["output_token_limit"],
+            temperature=config["temperature"]
+        )
+        print(result)
+        return result.choices[0].text
+    except:
+        return "<model parameter error>"
 
 fstar_insights_exe="fstar_insights/ocaml/bin/fstar_insights.exe"
 # read the environment variable FSTAR_HOME
@@ -119,9 +130,13 @@ def process_response(resp):
         start_column = entry["start_col"]
         end_line = entry["end_line"]
         end_column = entry["end_col"]
-        text = get_text_between_positions(file_name, start_line, start_column, end_line, end_column)
-        #print(f'Text between positions: {file_name}@{start_line},{start_column}-{end_line},{end_column}=\n{text}\n')
-        content.append(text)
+        try:
+            text = get_text_between_positions(file_name, start_line, start_column, end_line, end_column)
+            #print(f'Text between positions: {file_name}@{start_line},{start_column}-{end_line},{end_column}=\n{text}\n')
+            content.append(text)
+        except:
+            #content not found; just skip
+            continue
     return content
 
 # for each entry in the json file, send the query to fstar insights
@@ -145,7 +160,7 @@ def send_one_query_to_fstar_insights(fstar_insights_process, entry):
             break
         # read a line from stdout, until the end 
         line = fstar_insights_process.stdout.readline()
-        print ("Response from fstar insights: " + line)
+        # print ("Response from fstar insights: " + line)
         try:
             resp = json.loads(line)
             break
@@ -158,53 +173,65 @@ def send_one_query_to_fstar_insights(fstar_insights_process, entry):
 
 import FStarHarness as FH
 
-def prepare_prompt(context, goal):
+def prepare_prompt(context, lemma_name, goal, config):
     prompt = "This is a problem in the F* programming language.\n\n Can you write a proof of the goal lemma below?\n\n"
-    prompt += "The goal is <GOAL>\n\n val goal : " + goal + "\n\n</GOAL>\n\n"
     prompt += "\n\nYou can use some other lemmas and functions in the context, <CONTEXT>\n\n"
-    while (len(prompt) < 1024 and len(context) > 0):
-        prompt = prompt + context.pop(0) + "\n"
+    while len(context) > 0:
+        extended_prompt = maybe_extend_prompt(prompt, context.pop(0), config)
+        if extended_prompt is None:
+            break
+        else:
+            prompt = extended_prompt
     prompt += "\n\n</CONTEXT>\n\n"
-    prompt += "Your solution should look like this: let goal = <YOUR PROOF HERE>\n\n"
+    prompt += "The goal is <GOAL>\n\n val " + lemma_name + " : " + goal + "\n\n</GOAL>\n\n"
+    prompt += "Your solution should look like this: let " + lemma_name + " = <YOUR PROOF HERE>\n\n"
     print("<SAMPLE PROMPT>" +prompt+ "</SAMPLE PROMPT>")
     return prompt
 
-def process_one_instance(fstar_insights_process, entry):
+def process_one_instance(fstar_insights_process, entry, config, out_file):
     print("Attempting lemma " + entry["name"])
+    lemma_long_name = entry["name"]
+    lemma_name = lemma_long_name.split(".")[-1]
     (context, goal) = send_one_query_to_fstar_insights(fstar_insights_process, entry)
-    print(f'Context: {context}\n\n Goal is: {goal}\n')
+    # print(f'Context: {context}\n\n Goal is: {goal}\n')
     module_name = entry["source_file"]
     # strip the .fst extension
     module_name = module_name[:-4]
     lemma_statement = entry["lemma_statement"]
-    goal_statement = f'val goal : {lemma_statement}'
+    goal_statement = f'val {lemma_name} : {lemma_statement}'
     file_name, scaffolding = FH.generate_harness_for_lemma(module_name, [module_name], goal_statement)
-    fstar_process = FH.launch_fstar(file_name)  
-    prompt = prepare_prompt(context, goal) 
-    proposed_solution = call_model(prompt) #"let goal = admit()\n" #instead of placeholder, get a suggestion from LLM
-    solution = f'{scaffolding}\n{proposed_solution}\n'
-    result = FH.check_solution(fstar_process, solution)
-    print(f'Got result {result}')
+    fstar_process = FH.launch_fstar(file_name)
+    for attempt in range(config["num_attempts"]):
+        prompt = prepare_prompt(context, lemma_name, goal, config) 
+        proposed_solution = "<dummy>" #call_model(prompt, config)
+        solution = f'{scaffolding}\n{proposed_solution}\n'
+        should_check_result="no-check"
+        if (config["should_check"]):
+            should_check_result = FH.check_solution(fstar_process, solution)
+        logged_solution = { "attempt": attempt, "prompt":prompt, "solution":proposed_solution, "entry":entry, "check_result":should_check_result }
+        json.dump(logged_solution, out_file)
 
+    # print(f'Got result {result}')
 # for each entry in the json file, send the query to fstar insights
-def send_queries_to_fstar_insights(fstar_insights_process, json_data):
-    # for each entry in the json file
-    for entry in json_data:
-        # send the query to fstar insights
-        process_one_instance(fstar_insights_process, entry)
+def send_queries_to_fstar_insights(fstar_insights_process, json_data, config):
+    with open(out_file, "w") as f:
+        # for each entry in the json file
+        for entry in json_data:
+            # send the query to fstar insights
+            process_one_instance(fstar_insights_process, entry, config, f)
 
 # if the number of command line arguments is not 2, print an error message and exit
 # the first argument is the name of the script
 # the second argument is the name of the json file
-if len(sys.argv) != 2:
-    print("Usage: python3 fstar_insights.py <json_file>")
+if len(sys.argv) != 3:
+    print("Usage: python3 fstar_insights.py <json_file> <out file>")
     exit(1)
-     
+
 # read the json file specified on the first command line argument
 json_data = read_json_file(sys.argv[1])
-# launch fstar insights
+config = read_json_file("interact_with_fstar.config.json")
+out_file = sys.argv[2]
 fstar_insights_process = launch_fstar_insights()
-# send the queries to fstar insights
-send_queries_to_fstar_insights(fstar_insights_process, json_data)
-# close the process
+send_queries_to_fstar_insights(fstar_insights_process, json_data, config)
 fstar_insights_process.stdin.close()
+

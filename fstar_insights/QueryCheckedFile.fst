@@ -28,6 +28,32 @@ let options : list FStar.Getopt.opt =
     (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");    
   ]
 
+let load_file_names () = 
+  let fns = 
+    List.collect
+      (fun inc -> List.map (fun fn -> String.lowercase fn, fn)
+                        (BU.readdir inc))
+      !includes
+  in
+  fns
+    
+let map_file_name = 
+  let files = BU.mk_ref None in
+  let find_file f files =
+    let fsti = f ^ ".fsti.checked" in
+    match List.assoc fsti files with
+    | None -> List.assoc #string #string (f ^ ".fst.checked") files
+    | Some f -> Some f
+  in
+  fun f -> 
+    match !files with
+    | None ->
+      let fns = load_file_names () in
+      files := Some fns;
+      find_file f fns
+    | Some fns -> 
+      find_file f fns
+
 let find_file_in_path f =
   match List.tryFind (fun i -> BU.file_exists (BU.concat_dir_filename i f)) !includes with
   | None -> None
@@ -92,12 +118,14 @@ let is_sigelt_lemma (se:sigelt) = check_type se is_lemma_arrow
 
 let checked_file_content = list string & modul
 let checked_files : BU.smap checked_file_content = BU.smap_create 100
-let print_stderr f l = BU.fprint BU.stderr f l
+let print_stderr f l = BU.fprint BU.stdout f l
 
 let read_checked_file (source_filename:string)
   : option checked_file_content 
   = let checked_file = 
-      if BU.ends_with source_filename ".fst"
+      if BU.ends_with source_filename ".checked"
+      then source_filename
+      else if BU.ends_with source_filename ".fst"
       then source_filename ^ ".checked"
       else source_filename ^ ".fst.checked"
     in
@@ -140,10 +168,15 @@ let load_dependences (cfc:checked_file_content)
           if should_exclude dep 
           then aux deps modules
           else (
-          match BU.smap_try_find checked_files dep with
+          let fn =
+            match map_file_name dep with
+            | None -> dep
+            | Some f -> f 
+          in
+          match BU.smap_try_find checked_files fn with
           | Some m -> aux deps (m::modules)
           | None -> (
-            match read_checked_file dep with
+            match read_checked_file fn with
             | None -> 
               (* file not found, reported warning, continue *)
               aux deps modules
@@ -167,6 +200,7 @@ let load_dependences (cfc:checked_file_content)
 let dependences_of_definition (source_file:string) (name:string)
   : list sigelt                              
   = print_stderr "Loading deps of %s:%s\n" [source_file; name];
+    let _ = read_checked_file "LowStar.Vector.fst" in
     let cfc =
         match read_checked_file source_file with
         | None -> 

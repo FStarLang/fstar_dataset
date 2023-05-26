@@ -73,11 +73,11 @@ def validate_fstar_response(json_objects):
         if resp["kind"] == "response":
             if resp["status"] != "success":
                 print(f"F* reports error: {resp}")
-                return False
+                return (False, resp)
             else:
                 continue
         print(f"Error: {resp}")
-        return False
+        return (False, resp)
     return True
 
 
