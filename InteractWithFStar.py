@@ -203,7 +203,7 @@ def process_one_instance(fstar_insights_process, entry, config, out_file):
     fstar_process = FH.launch_fstar(file_name)
     for attempt in range(config["num_attempts"]):
         prompt = prepare_prompt(context, lemma_name, goal, config) 
-        proposed_solution = "<dummy>" #call_model(prompt, config)
+        proposed_solution = call_model(prompt, config)
         solution = f'{scaffolding}\n{proposed_solution}\n'
         should_check_result="no-check"
         if (config["should_check"]):
