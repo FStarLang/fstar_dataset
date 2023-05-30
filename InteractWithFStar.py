@@ -5,9 +5,19 @@ import sys
 import openai
 import re
 import tiktoken
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    wait_random_exponential,
+    retry_if_exception_type
+) 
 
 encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+openai.api_type = "azure"
 openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_base = os.getenv("OPENAI_API_BASE")
+openai.api_version = os.getenv("OPENAI_API_VERSION")
 
 def maybe_extend_prompt(prompt, rest_of_prompt, config):
     next_prompt = prompt + "\n" +rest_of_prompt
@@ -17,17 +27,18 @@ def maybe_extend_prompt(prompt, rest_of_prompt, config):
     else:
         return None
 
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(100), retry=retry_if_exception_type(openai.error.RateLimitError))
 def call_model(prompt, config):
     try:
-        result = openai.Completion.create(
-            model="text-davinci-003",
-            prompt=prompt,
+        result = openai.ChatCompletion.create(
+            engine= config["engine"],
+            messages=[{"role": "system", "content": "Pretend you are an F* proof assistant. Provide a proof to the best of your ability. You do not need to explain the output, please be brief."},{"role": "user", "content": prompt}],
             max_tokens=config["output_token_limit"],
-            temperature=config["temperature"]
+            temperature=config["temperature"],
+            n = config["num_attempts"],
         )
-        print(result)
-        return result.choices[0].text
-    except:
+        return result.choices
+    except Exception as e:
         return "<model parameter error>"
 
 fstar_insights_exe="fstar_insights/ocaml/bin/fstar_insights.exe"
@@ -184,7 +195,8 @@ def prepare_prompt(context, lemma_name, goal, config):
             prompt = extended_prompt
     prompt += "\n\n</CONTEXT>\n\n"
     prompt += "The goal is <GOAL>\n\n val " + lemma_name + " : " + goal + "\n\n</GOAL>\n\n"
-    prompt += "Your solution should look like this: let " + lemma_name + " = <YOUR PROOF HERE>\n\n"
+   # prompt += "Your solution should look like this: let " + lemma_name + " = <YOUR PROOF HERE>\n\n"
+    prompt += "Surround your proof with <PROOF> and </PROOF> tags.\n\n"
     print("<SAMPLE PROMPT>" +prompt+ "</SAMPLE PROMPT>")
     return prompt
 
@@ -201,14 +213,18 @@ def process_one_instance(fstar_insights_process, entry, config, out_file):
     goal_statement = f'val {lemma_name} : {lemma_statement}'
     file_name, scaffolding = FH.generate_harness_for_lemma(module_name, [module_name], goal_statement)
     fstar_process = FH.launch_fstar(file_name)
-    for attempt in range(config["num_attempts"]):
-        prompt = prepare_prompt(context, lemma_name, goal, config) 
-        proposed_solution = call_model(prompt, config)
-        solution = f'{scaffolding}\n{proposed_solution}\n'
+    #for attempt in range(config["num_attempts"]):
+    prompt = prepare_prompt(context, lemma_name, goal, config) 
+    proposed_solution = call_model(prompt, config)
+    
+    for i, solution in enumerate(proposed_solution):
+        solution_text = solution['message']['content']
+        solution_text = solution_text[solution_text.find("<PROOF>")+len("<PROOF>"):solution_text.find("</PROOF>")]
+        solution = f'{scaffolding}\n{solution_text}\n'
         should_check_result="no-check"
         if (config["should_check"]):
             should_check_result = FH.check_solution(fstar_process, solution)
-        logged_solution = { "attempt": attempt, "prompt":prompt, "solution":proposed_solution, "entry":entry, "check_result":should_check_result }
+        logged_solution = { "attempt": i, "prompt":prompt, "solution":solution_text, "entry":entry, "check_result":should_check_result }
         json.dump(logged_solution, out_file)
 
     # print(f'Got result {result}')
