@@ -134,8 +134,10 @@ def get_text_between_positions(file_name, start_line, start_column, end_line, en
     return text
     
 def process_response(resp):
+    dependences = resp["dependences"]
+    user_lemmas = resp["user_called_lemmas"]
     content = []
-    for entry in resp:
+    for entry in dependences:
         file_name = entry["file_name"]
         start_line = entry["start_line"]
         start_column = entry["start_col"]
@@ -148,7 +150,7 @@ def process_response(resp):
         except:
             #content not found; just skip
             continue
-    return content
+    return (user_lemmas, content)
 
 # for each entry in the json file, send the query to fstar insights
 def send_one_query_to_fstar_insights(fstar_insights_process, entry):
@@ -177,9 +179,10 @@ def send_one_query_to_fstar_insights(fstar_insights_process, entry):
             break
         except:
             print("Not json, keeping on reading")
-    context = process_response(resp)
+    user_lemmas, context = process_response(resp)
     goal = entry["lemma_statement"]
-    # print(f'Context: {context}\n|- {goal}\n')
+    print(f'Context: {context}\n|- {goal}\n')
+    print(f'User called lemmas: {user_lemmas}')
     return (context, goal)
 
 import FStarHarness as FH

@@ -96,7 +96,9 @@ let is_simple_definition (t:term) : ML bool =
       aux t
     | _ -> false
   in
-  aux body
+  match (SS.compress body).n with
+  | Tm_constant _ -> false //too simple
+  | _ -> aux body
 
 let is_simple_lemma (se:sigelt) =
   match se.sigel with
@@ -118,7 +120,7 @@ let is_sigelt_lemma (se:sigelt) = check_type se is_lemma_arrow
 
 let checked_file_content = list string & modul
 let checked_files : BU.smap checked_file_content = BU.smap_create 100
-let print_stderr f l = BU.fprint BU.stdout f l
+let print_stderr f l = BU.fprint BU.stderr f l
 
 let read_checked_file (source_filename:string)
   : option checked_file_content 
@@ -196,9 +198,17 @@ let load_dependences (cfc:checked_file_content)
     in
     aux deps []
 
-
+let functions_called_by_user_in_proof (se:sigelt) 
+  : list string
+  = match se.sigel with
+    | Sig_let { lbs=(_, [lb]) } ->
+      let fvars = FStar.Syntax.Free.fvars lb.lbdef in
+      List.map Ident.string_of_lid (BU.set_elements fvars)
+    | _ -> []
+      
+      
 let dependences_of_definition (source_file:string) (name:string)
-  : list sigelt                              
+  : list string & list sigelt                              
   = print_stderr "Loading deps of %s:%s\n" [source_file; name];
     let _ = read_checked_file "LowStar.Vector.fst" in
     let cfc =
@@ -213,20 +223,20 @@ let dependences_of_definition (source_file:string) (name:string)
     let _, m = cfc in
     let rec prefix_until_name out ses =
       match ses with
-      | [] -> List.rev out
+      | [] -> [], List.rev out
       | se :: ses -> (
         match se.sigel with
         | Sig_let { lids = names } ->
           if BU.for_some (Ident.lid_equals name) names
-          then List.rev out //found it
+          then functions_called_by_user_in_proof se, List.rev out //found it
           else prefix_until_name (se :: out) ses
         | _ -> 
           prefix_until_name (se :: out) ses
       )
     in
     let ses = List.collect (fun (_, m) -> m.declarations) module_deps in
-    let local_deps = prefix_until_name [] m.declarations in
-    local_deps @ ses
+    let user_called_lemmas, local_deps = prefix_until_name [] m.declarations in
+    user_called_lemmas, local_deps @ ses
 
 let filter_sigelts (ses:list sigelt) = 
   List.filter
@@ -301,11 +311,14 @@ let run_json_cmd (j:json) =
   | Some (JsonStr "find_deps") -> (
     let open JU in
     let payload = js_assoc (assoc "payload" ja) in
-    let source_file = js_str (assoc "source_file" payload) in
+    let source_file = JU.js_str (assoc "source_file" payload) in
     let name = js_str (assoc "name" payload) in
-    let ses = dependences_of_definition source_file name in
+    let user_called_lemmas, ses = dependences_of_definition source_file name in
+    let user_called_lemmas = JsonList (List.map JsonStr user_called_lemmas) in
     let json = JsonList (List.collect dep_as_json ses) in
-    BU.print_string (string_of_json json);
+    let out = JsonAssoc [("user_called_lemmas", user_called_lemmas);
+                         ("dependences", json)] in
+    BU.print_string (string_of_json out);
     BU.print_string "\n"
    )
   | Some j -> 
