@@ -20,11 +20,14 @@ let add_include s = includes := s :: !includes
 let set_interactive () = interactive := true
 let simple_lemmas : ref bool = BU.mk_ref false
 let set_simple_lemmas () = simple_lemmas := true
+let all_lemma_premises : ref bool = BU.mk_ref false
+let set_all_lemma_premises () = all_lemma_premises := true
 let options : list FStar.Getopt.opt = 
   let open FStar.Getopt in
   [
     (noshort, "include", OneArg (add_include, "include"), "include path");
     (noshort, "find_simple_lemmas", ZeroArgs set_simple_lemmas, "scan a file for simple lemmas, dump output as json");
+    (noshort, "all_lemma_premises", ZeroArgs set_all_lemma_premises, "scan a file for all lemmas, dump their names and all their free-variables (global defs) as json");    
     (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");    
   ]
 
@@ -99,6 +102,12 @@ let is_simple_definition (t:term) : ML bool =
   match (SS.compress body).n with
   | Tm_constant _ -> false //too simple
   | _ -> aux body
+
+let is_lemma (se:sigelt) =
+  match se.sigel with
+  | Sig_let { lbs=(_, lbs) } ->
+    List.for_all (fun lb -> is_lemma_arrow lb.lbtyp) lbs
+  | _ -> false
 
 let is_simple_lemma (se:sigelt) =
   match se.sigel with
@@ -198,12 +207,43 @@ let load_dependences (cfc:checked_file_content)
     in
     aux deps []
 
+//[(lemma_1, [premises;in;lemma1]); ... (lemma_n, ...)]
+//where lemma_1 ...lemma_n are mutually defined
+type lemma_with_premises = {
+  source_range: Range.range;
+  name: string;
+  premises: list string
+}
+
+open FStar.Json
+
+let range_as_json_list (r:Range.range)
+  : list (string & json)
+  = let start_pos = Range.start_of_range r in
+    let end_pos = Range.end_of_range r in
+    ["file_name", JsonStr (Range.file_of_range r);
+     "start_line", JsonInt (Range.line_of_pos start_pos);
+     "start_col", JsonInt (Range.col_of_pos start_pos);                
+     "end_line", JsonInt (Range.line_of_pos end_pos);                
+     "end_col", JsonInt (Range.col_of_pos end_pos)]
+
+let lemma_with_premises_as_json (l:lemma_with_premises) =
+  JsonAssoc ((range_as_json_list l.source_range) @
+             [("name", JsonStr l.name);
+              ("premises", JsonList (List.map JsonStr l.premises))])
+ 
+  
 let functions_called_by_user_in_proof (se:sigelt) 
-  : list string
+  : list lemma_with_premises
   = match se.sigel with
-    | Sig_let { lbs=(_, [lb]) } ->
-      let fvars = FStar.Syntax.Free.fvars lb.lbdef in
-      List.map Ident.string_of_lid (BU.set_elements fvars)
+    | Sig_let { lbs=(_, lbs) } ->
+      List.map (fun lb ->
+        { source_range = lb.lbpos;
+          name = FStar.Syntax.Print.lbname_to_string lb.lbname;
+          premises = List.map Ident.string_of_lid 
+                              (BU.set_elements (FStar.Syntax.Free.fvars lb.lbdef))
+        })
+        lbs
     | _ -> []
       
       
@@ -228,7 +268,8 @@ let dependences_of_definition (source_file:string) (name:string)
         match se.sigel with
         | Sig_let { lids = names } ->
           if BU.for_some (Ident.lid_equals name) names
-          then functions_called_by_user_in_proof se, List.rev out //found it
+          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_proof se)),
+               List.rev out //found it
           else prefix_until_name (se :: out) ses
         | _ -> 
           prefix_until_name (se :: out) ses
@@ -243,13 +284,12 @@ let filter_sigelts (ses:list sigelt) =
     (fun se -> is_sigelt_tot se || is_sigelt_ghost se || is_sigelt_lemma se)
     ses
 
-open FStar.Json
-let find_simple_lemmas (source_file:string) : list sigelt = 
+
+let read_module_sigelts (source_file:string) : list sigelt = 
   try
     match read_checked_file source_file with
     | None -> exit 1
-    | Some (deps, modul) ->
-      List.filter is_simple_lemma modul.declarations
+    | Some (deps, modul) -> modul.declarations
   with
   | e ->
     match FStar.Errors.issue_of_exn e with
@@ -260,15 +300,15 @@ let find_simple_lemmas (source_file:string) : list sigelt =
       BU.print_string (FStar.Errors.format_issue issue);
       exit 1
 
-let range_as_json_list (r:Range.range)
-  : list (string & json)
-  = let start_pos = Range.start_of_range r in
-    let end_pos = Range.end_of_range r in
-    ["file_name", JsonStr (Range.file_of_range r);
-     "start_line", JsonInt (Range.line_of_pos start_pos);
-     "start_col", JsonInt (Range.col_of_pos start_pos);                
-     "end_line", JsonInt (Range.line_of_pos end_pos);                
-     "end_col", JsonInt (Range.col_of_pos end_pos)]
+let find_simple_lemmas (source_file:string) : list sigelt = 
+  let sigelts = read_module_sigelts source_file in
+  List.filter is_simple_lemma sigelts
+
+let find_lemmas_and_premises (source_file:string) 
+  : list lemma_with_premises =
+  let sigelts = read_module_sigelts source_file in
+  let lemmas = List.filter is_lemma sigelts in
+  List.collect functions_called_by_user_in_proof lemmas
         
 let simple_lemma_as_json
       (source_file:string)
@@ -302,6 +342,15 @@ let dump_simple_lemmas_as_json (source_file:string)
     match simple_lemmas with
     | [] -> ()
     | _ -> BU.print_string (string_of_json (JsonList simple_lemmas))
+
+let dump_all_lemma_premises_as_json (source_file:string)
+  = let lemmas = 
+        List.map lemma_with_premises_as_json
+                 (find_lemmas_and_premises source_file)
+    in
+    match lemmas with
+    | [] -> ()
+    | _ -> BU.print_string (string_of_json (JsonList lemmas))
 
 module JU = FStar.Interactive.JsonHelper
 
@@ -342,14 +391,16 @@ let interact () =
            
 let main () = 
   let usage () =
-    print_stderr "Usage: fstar_insights.exe (--interactive | --find_simple_lemmas) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
+    print_stderr "Usage: fstar_insights.exe (--interactive | --find_simple_lemmas | --all_lemma_premises) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
   in
   let filenames = BU.mk_ref [] in
   let res = FStar.Getopt.parse_cmdline options (fun s -> filenames :=  s::!filenames; Getopt.Success) in
   match res with
   | Getopt.Success -> 
     let files = !filenames in
-    if !simple_lemmas
+    if !all_lemma_premises
+    then List.iter dump_all_lemma_premises_as_json files
+    else if !simple_lemmas
     then List.iter dump_simple_lemmas_as_json files
     else if !interactive
     then interact ()
@@ -369,3 +420,53 @@ let _ =
     print_stderr "Exception: %s\n" [BU.print_exn e];
     exit 1
 #pop-options
+
+(* Things that we would like to extract 
+
+
+  {
+    "file_name": "FStar.BV.fst",
+    "start_line": 59,
+    "start_col": 2,
+    "end_line": 59,
+    "end_col": 49,
+    "name": "int2bv_shl",
+    "type signature": "...",
+    "definition": "let int2bv_shl ...",
+    "premises": [
+      "Prims.pos", 
+      "FStar.UInt.uint_t",
+      "FStar.BV.bv_t",
+      "Prims.squash",
+      "Prims.eq2",
+      "FStar.BV.bvshl",
+      "FStar.BV.int2bv",
+      "FStar.BV.inverse_vec_lemma",
+      "Prims.unit"
+    ],
+    "smt_premises": [
+     (* read from hints file *)
+     Do we want the actual SMT2 text for each premise and the query?
+     It gets pretty big
+     http://fstar-lang.org/tutorial/book/under_the_hood/uth_smt.html#unsat-core-and-hints
+    ]
+    "effects": [
+      "Lemma", "Ghost", "ST", ... 
+    ],
+    "proof_features": [
+      "induction on parameter k",
+      "case split on ... ",
+      "mutual with ... ",
+      "arithmetic", 
+      "sequences",
+      "maps",
+      "separation logic",
+      "smt pats"
+    ],
+    
+  },
+
+
+*)
+
+
