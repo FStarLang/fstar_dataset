@@ -13,6 +13,7 @@ module List = FStar.Compiler.List
 open FStar.Syntax.Syntax
 module U = FStar.Syntax.Util
 module SS = FStar.Syntax.Subst
+module P = FStar.Syntax.Print
 
 let includes : ref (list string) = BU.mk_ref []
 let interactive : ref bool = BU.mk_ref false
@@ -20,14 +21,14 @@ let add_include s = includes := s :: !includes
 let set_interactive () = interactive := true
 let simple_lemmas : ref bool = BU.mk_ref false
 let set_simple_lemmas () = simple_lemmas := true
-let all_lemma_premises : ref bool = BU.mk_ref false
-let set_all_lemma_premises () = all_lemma_premises := true
+let all_defs_and_premises : ref bool = BU.mk_ref false
+let set_all_defs_and_premises () = all_defs_and_premises := true
 let options : list FStar.Getopt.opt = 
   let open FStar.Getopt in
   [
     (noshort, "include", OneArg (add_include, "include"), "include path");
     (noshort, "find_simple_lemmas", ZeroArgs set_simple_lemmas, "scan a file for simple lemmas, dump output as json");
-    (noshort, "all_lemma_premises", ZeroArgs set_all_lemma_premises, "scan a file for all lemmas, dump their names and all their free-variables (global defs) as json");    
+    (noshort, "all_defs_and_premises", ZeroArgs set_all_defs_and_premises, "scan a file for all definitions, dump their names, defs, types, premises, etc. as json");    
     (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");    
   ]
 
@@ -107,6 +108,11 @@ let is_lemma (se:sigelt) =
   match se.sigel with
   | Sig_let { lbs=(_, lbs) } ->
     List.for_all (fun lb -> is_lemma_arrow lb.lbtyp) lbs
+  | _ -> false
+
+let is_def (se:sigelt) =
+  match se.sigel with
+  | Sig_let { lbs=(_, lbs) } -> true
   | _ -> false
 
 let is_simple_lemma (se:sigelt) =
@@ -209,10 +215,16 @@ let load_dependences (cfc:checked_file_content)
 
 //[(lemma_1, [premises;in;lemma1]); ... (lemma_n, ...)]
 //where lemma_1 ...lemma_n are mutually defined
-type lemma_with_premises = {
-  source_range: Range.range;
+type defs_with_premises = {
+  definition:string;
+  eff: string;
+  eff_flags: list string;
+  mutual_with:list string;
   name: string;
-  premises: list string
+  premises: list string;
+  proof_features: list string;
+  source_range: Range.range;
+  typ: string;
 }
 
 open FStar.Json
@@ -227,21 +239,48 @@ let range_as_json_list (r:Range.range)
      "end_line", JsonInt (Range.line_of_pos end_pos);                
      "end_col", JsonInt (Range.col_of_pos end_pos)]
 
-let lemma_with_premises_as_json (l:lemma_with_premises) =
+let defs_with_premises_as_json (l:defs_with_premises) =
   JsonAssoc ((range_as_json_list l.source_range) @
-             [("name", JsonStr l.name);
-              ("premises", JsonList (List.map JsonStr l.premises))])
+             [
+              ("definition", JsonStr l.definition);              
+              ("effect", JsonStr l.eff);
+              ("effect_flags", JsonList (List.map JsonStr l.eff_flags));
+              ("mutual_with", JsonList (List.map JsonStr l.mutual_with));
+              ("name", JsonStr l.name);
+              ("premises", JsonList (List.map JsonStr l.premises));
+              ("proof_features", JsonList (List.map JsonStr l.proof_features));
+              ("type", JsonStr l.typ);
+              ])
  
   
-let functions_called_by_user_in_proof (se:sigelt) 
-  : list lemma_with_premises
+let functions_called_by_user_in_def (se:sigelt) 
+  : list defs_with_premises
   = match se.sigel with
-    | Sig_let { lbs=(_, lbs) } ->
+    | Sig_let { lbs=(is_rec, lbs) } ->
+      let maybe_rec = 
+        match lbs with
+        | _::_::_ -> ["mutual recursion"]
+        | _ -> if is_rec then ["recursion"] else []
+      in
+      let mutual_with = 
+        match lbs with
+        | []
+        | [_] -> []
+        | _ -> List.map (fun lb -> P.lbname_to_string lb.lbname) lbs
+      in
       List.map (fun lb ->
+        let _, comp = U.arrow_formals_comp lb.lbtyp in
+        let flags = U.comp_flags comp in
         { source_range = lb.lbpos;
-          name = FStar.Syntax.Print.lbname_to_string lb.lbname;
+          name = P.lbname_to_string lb.lbname;
+          typ = P.term_to_string lb.lbtyp;
+          definition = P.term_to_string lb.lbdef;
           premises = List.map Ident.string_of_lid 
-                              (BU.set_elements (FStar.Syntax.Free.fvars lb.lbdef))
+                              (BU.set_elements (FStar.Syntax.Free.fvars lb.lbdef));
+          eff = Ident.string_of_lid (U.comp_effect_name comp);
+          eff_flags = List.map P.cflag_to_string flags;
+          mutual_with;
+          proof_features = maybe_rec
         })
         lbs
     | _ -> []
@@ -268,7 +307,7 @@ let dependences_of_definition (source_file:string) (name:string)
         match se.sigel with
         | Sig_let { lids = names } ->
           if BU.for_some (Ident.lid_equals name) names
-          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_proof se)),
+          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_def se)),
                List.rev out //found it
           else prefix_until_name (se :: out) ses
         | _ -> 
@@ -304,11 +343,11 @@ let find_simple_lemmas (source_file:string) : list sigelt =
   let sigelts = read_module_sigelts source_file in
   List.filter is_simple_lemma sigelts
 
-let find_lemmas_and_premises (source_file:string) 
-  : list lemma_with_premises =
+let find_defs_and_premises (source_file:string) 
+  : list defs_with_premises =
   let sigelts = read_module_sigelts source_file in
-  let lemmas = List.filter is_lemma sigelts in
-  List.collect functions_called_by_user_in_proof lemmas
+  let defs = List.filter is_def sigelts in
+  List.collect functions_called_by_user_in_def defs
         
 let simple_lemma_as_json
       (source_file:string)
@@ -317,7 +356,7 @@ let simple_lemma_as_json
  = match se.sigel with
    | Sig_let { lbs=(_, [lb]); lids=[name] } -> 
      let name = JsonStr (Ident.string_of_lid name) in
-     let lemma_statement = FStar.Syntax.Print.term_to_string lb.lbtyp in
+     let lemma_statement = P.term_to_string lb.lbtyp in
      let criterion = JsonStr "simple lemma" in
      JsonAssoc (["source_file", JsonStr source_file;
                  "name", name;
@@ -345,8 +384,8 @@ let dump_simple_lemmas_as_json (source_file:string)
 
 let dump_all_lemma_premises_as_json (source_file:string)
   = let lemmas = 
-        List.map lemma_with_premises_as_json
-                 (find_lemmas_and_premises source_file)
+        List.map defs_with_premises_as_json
+                 (find_defs_and_premises source_file)
     in
     match lemmas with
     | [] -> ()
@@ -391,14 +430,14 @@ let interact () =
            
 let main () = 
   let usage () =
-    print_stderr "Usage: fstar_insights.exe (--interactive | --find_simple_lemmas | --all_lemma_premises) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
+    print_stderr "Usage: fstar_insights.exe (--interactive | --find_simple_lemmas | --all_defs_and_premises) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
   in
   let filenames = BU.mk_ref [] in
   let res = FStar.Getopt.parse_cmdline options (fun s -> filenames :=  s::!filenames; Getopt.Success) in
   match res with
   | Getopt.Success -> 
     let files = !filenames in
-    if !all_lemma_premises
+    if !all_defs_and_premises
     then List.iter dump_all_lemma_premises_as_json files
     else if !simple_lemmas
     then List.iter dump_simple_lemmas_as_json files
@@ -431,7 +470,7 @@ let _ =
     "end_line": 59,
     "end_col": 49,
     "name": "int2bv_shl",
-    "type signature": "...",
+    "type": "...",
     "definition": "let int2bv_shl ...",
     "premises": [
       "Prims.pos", 
@@ -453,10 +492,11 @@ let _ =
     "effects": [
       "Lemma", "Ghost", "ST", ... 
     ],
+    "mutual_with": [ ... ];
+    "decreases": string;
     "proof_features": [
       "induction on parameter k",
       "case split on ... ",
-      "mutual with ... ",
       "arithmetic", 
       "sequences",
       "maps",
