@@ -138,7 +138,7 @@ let checked_files : BU.smap checked_file_content = BU.smap_create 100
 let print_stderr f l = BU.fprint BU.stderr f l
 
 let read_checked_file (source_filename:string)
-  : option checked_file_content 
+  : option checked_file_content
   = let checked_file = 
       if BU.ends_with source_filename ".checked"
       then source_filename
@@ -161,6 +161,31 @@ let read_checked_file (source_filename:string)
         Some (deps, tc_result.checked_module)
     )
 
+let hints_t = BU.hints
+let print_hints_t (h:hints_t) = 
+  let open BU in
+  print_stderr "Found %s hints\n" [string_of_int (List.length h)];
+  List.iter 
+    (function None -> () | Some h -> print_stderr "hint (%s, %s)\n" [h.hint_name; string_of_int h.hint_index])
+    h
+    
+let read_hints_file (source_filename:string)
+  : hints_t
+  = let hint_file = FStar.Options.hint_file_for_src source_filename in
+    match find_file_in_path hint_file  with  
+    | None -> 
+      print_stderr "Could not find hints file  %s\n" [hint_file];    
+      []
+    | Some fn ->
+      match BU.read_hints fn with
+      | BU.HintsOK h -> 
+        print_stderr "Read hints file succesfully %s\n" [fn];
+        print_hints_t h.hints;
+        h.hints
+      | _ ->
+        print_stderr "Could not read hints file %s\n" [fn];
+        []
+    
 let load_dependences (cfc:checked_file_content)
   : list checked_file_content
   = let dependence_exclusions = ["prims"; "fstar.pervasives.native"; "fstar.pervasives"] in
@@ -215,10 +240,11 @@ let load_dependences (cfc:checked_file_content)
 
 //[(lemma_1, [premises;in;lemma1]); ... (lemma_n, ...)]
 //where lemma_1 ...lemma_n are mutually defined
-type defs_with_premises = {
+type defs_and_premises = {
   definition:string;
   eff: string;
   eff_flags: list string;
+  hints: list BU.hint;
   mutual_with:list string;
   name: string;
   premises: list string;
@@ -239,12 +265,23 @@ let range_as_json_list (r:Range.range)
      "end_line", JsonInt (Range.line_of_pos end_pos);                
      "end_col", JsonInt (Range.col_of_pos end_pos)]
 
-let defs_with_premises_as_json (l:defs_with_premises) =
+let hint_as_json (h:BU.hint) = 
+  let open BU in
+  JsonAssoc [("hint_name", JsonStr h.hint_name);
+             ("hint_index", JsonInt h.hint_index);
+             ("fuel", JsonInt h.fuel);
+             ("ifuel", JsonInt h.ifuel);
+             ("unsat_core", JsonList (List.map JsonStr (dflt [] h.unsat_core)));
+             ("query_elapsed_time", JsonInt h.query_elapsed_time)]
+             
+
+let defs_and_premises_as_json (l:defs_and_premises) =
   JsonAssoc ((range_as_json_list l.source_range) @
              [
               ("definition", JsonStr l.definition);              
               ("effect", JsonStr l.eff);
               ("effect_flags", JsonList (List.map JsonStr l.eff_flags));
+              ("hints", JsonList (List.map hint_as_json l.hints));
               ("mutual_with", JsonList (List.map JsonStr l.mutual_with));
               ("name", JsonStr l.name);
               ("premises", JsonList (List.map JsonStr l.premises));
@@ -252,9 +289,17 @@ let defs_with_premises_as_json (l:defs_with_premises) =
               ("type", JsonStr l.typ);
               ])
  
-  
-let functions_called_by_user_in_def (se:sigelt) 
-  : list defs_with_premises
+
+let find_hints_for (h:hints_t) (name:string) = 
+  let open BU in
+  List.collect
+      (fun h ->
+        match h with
+        | Some h when h.hint_name = name -> [h]
+        | _ -> []) h
+    
+let functions_called_by_user_in_def (h:hints_t) (se:sigelt)
+  : list defs_and_premises
   = match se.sigel with
     | Sig_let { lbs=(is_rec, lbs) } ->
       let maybe_rec = 
@@ -268,11 +313,17 @@ let functions_called_by_user_in_def (se:sigelt)
         | [_] -> []
         | _ -> List.map (fun lb -> P.lbname_to_string lb.lbname) lbs
       in
+      let lbname_to_string (lbname: lbname) = 
+        match lbname with
+        | Inl _ -> failwith "Unexpected lb name" 
+        | Inr fv -> Ident.string_of_lid fv.fv_name.v
+      in
       List.map (fun lb ->
         let _, comp = U.arrow_formals_comp lb.lbtyp in
         let flags = U.comp_flags comp in
+        let name = lbname_to_string lb.lbname in
         { source_range = lb.lbpos;
-          name = P.lbname_to_string lb.lbname;
+          name;
           typ = P.term_to_string lb.lbtyp;
           definition = P.term_to_string lb.lbdef;
           premises = List.map Ident.string_of_lid 
@@ -280,7 +331,8 @@ let functions_called_by_user_in_def (se:sigelt)
           eff = Ident.string_of_lid (U.comp_effect_name comp);
           eff_flags = List.map P.cflag_to_string flags;
           mutual_with;
-          proof_features = maybe_rec
+          proof_features = maybe_rec;
+          hints = find_hints_for h name
         })
         lbs
     | _ -> []
@@ -289,7 +341,6 @@ let functions_called_by_user_in_def (se:sigelt)
 let dependences_of_definition (source_file:string) (name:string)
   : list string & list sigelt                              
   = print_stderr "Loading deps of %s:%s\n" [source_file; name];
-    let _ = read_checked_file "LowStar.Vector.fst" in
     let cfc =
         match read_checked_file source_file with
         | None -> 
@@ -297,6 +348,7 @@ let dependences_of_definition (source_file:string) (name:string)
           exit 1
         | Some cfc -> cfc
     in
+    let hints = read_hints_file source_file in
     let name = Ident.lid_of_str name in
     let module_deps = load_dependences cfc in
     let _, m = cfc in
@@ -307,7 +359,7 @@ let dependences_of_definition (source_file:string) (name:string)
         match se.sigel with
         | Sig_let { lids = names } ->
           if BU.for_some (Ident.lid_equals name) names
-          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_def se)),
+          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_def hints se)),
                List.rev out //found it
           else prefix_until_name (se :: out) ses
         | _ -> 
@@ -322,7 +374,6 @@ let filter_sigelts (ses:list sigelt) =
   List.filter
     (fun se -> is_sigelt_tot se || is_sigelt_ghost se || is_sigelt_lemma se)
     ses
-
 
 let read_module_sigelts (source_file:string) : list sigelt = 
   try
@@ -344,10 +395,11 @@ let find_simple_lemmas (source_file:string) : list sigelt =
   List.filter is_simple_lemma sigelts
 
 let find_defs_and_premises (source_file:string) 
-  : list defs_with_premises =
+  : list defs_and_premises =
   let sigelts = read_module_sigelts source_file in
+  let hints = read_hints_file source_file in
   let defs = List.filter is_def sigelts in
-  List.collect functions_called_by_user_in_def defs
+  List.collect (functions_called_by_user_in_def hints) defs
         
 let simple_lemma_as_json
       (source_file:string)
@@ -384,7 +436,7 @@ let dump_simple_lemmas_as_json (source_file:string)
 
 let dump_all_lemma_premises_as_json (source_file:string)
   = let lemmas = 
-        List.map defs_with_premises_as_json
+        List.map defs_and_premises_as_json
                  (find_defs_and_premises source_file)
     in
     match lemmas with
