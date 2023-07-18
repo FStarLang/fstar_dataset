@@ -126,6 +126,7 @@ def read_info(f : tarfile.TarFile, info : tarfile.TarInfo, defs : DefinitionsDat
         lemma_dict = defs.name2def[record.query_name]
         out.update(lemma_dict)
         json.dump(out, outf)
+        outf.write("\n")
         outf.flush()
 
 def read_tar(tarpath : str, defs : DefinitionsDataset, outpath : str):
