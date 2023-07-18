@@ -1,3 +1,10 @@
+(*
+Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where the
+`queries.jsonl` has been produced from the raw `smt2` queries that are sent to Z3.
+These raw `smt2` queries must have been gathered with an invocation with
+  $ export OTHERFLAGS="--z3refresh --log_queries" <build-command-such-as-`make`>.
+Authors: Nikhil Swamy, Saikat Chakrabory, Siddharth Bhat
+*)
 module QueryCheckedFile
 open FStar.Compiler
 open FStar.Compiler.Effect
@@ -244,7 +251,7 @@ type defs_and_premises = {
   definition:string;
   eff: string;
   eff_flags: list string;
-  hints: list BU.hint;
+  (* hints: list BU.hint; *)
   mutual_with:list string;
   name: string;
   premises: list string;
@@ -281,7 +288,6 @@ let defs_and_premises_as_json (l:defs_and_premises) =
               ("definition", JsonStr l.definition);              
               ("effect", JsonStr l.eff);
               ("effect_flags", JsonList (List.map JsonStr l.eff_flags));
-              ("hints", JsonList (List.map hint_as_json l.hints));
               ("mutual_with", JsonList (List.map JsonStr l.mutual_with));
               ("name", JsonStr l.name);
               ("premises", JsonList (List.map JsonStr l.premises));
@@ -290,6 +296,7 @@ let defs_and_premises_as_json (l:defs_and_premises) =
               ])
  
 
+(* 
 let find_hints_for (h:hints_t) (name:string) = 
   let open BU in
   List.collect
@@ -297,8 +304,10 @@ let find_hints_for (h:hints_t) (name:string) =
         match h with
         | Some h when h.hint_name = name -> [h]
         | _ -> []) h
+*)
     
-let functions_called_by_user_in_def (h:hints_t) (se:sigelt)
+(* let functions_called_by_user_in_def (h:hints_t) (se:sigelt) *)
+let functions_called_by_user_in_def (se:sigelt)
   : list defs_and_premises
   = match se.sigel with
     | Sig_let { lbs=(is_rec, lbs) } ->
@@ -332,7 +341,7 @@ let functions_called_by_user_in_def (h:hints_t) (se:sigelt)
           eff_flags = List.map P.cflag_to_string flags;
           mutual_with;
           proof_features = maybe_rec;
-          hints = find_hints_for h name
+          (* hints = find_hints_for h name *)
         })
         lbs
     | _ -> []
@@ -359,7 +368,7 @@ let dependences_of_definition (source_file:string) (name:string)
         match se.sigel with
         | Sig_let { lids = names } ->
           if BU.for_some (Ident.lid_equals name) names
-          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_def hints se)),
+          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_def se)),
                List.rev out //found it
           else prefix_until_name (se :: out) ses
         | _ -> 
@@ -397,9 +406,9 @@ let find_simple_lemmas (source_file:string) : list sigelt =
 let find_defs_and_premises (source_file:string) 
   : list defs_and_premises =
   let sigelts = read_module_sigelts source_file in
-  let hints = read_hints_file source_file in
+  (* let hints = read_hints_file source_file in *)
   let defs = List.filter is_def sigelts in
-  List.collect (functions_called_by_user_in_def hints) defs
+  List.collect functions_called_by_user_in_def defs
         
 let simple_lemma_as_json
       (source_file:string)

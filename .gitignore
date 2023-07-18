@@ -208,8 +208,10 @@ FStar/
 *.exe
 *.fst
 
-fstar_insights/
+# fstar_insights/
 FStar/
 *.json
 *.jar
+!fstar_insights/lemmas_with_premises/makefile
+!fstar_insights/lemmas_with_premises/query_smt2_extractor.py
 
