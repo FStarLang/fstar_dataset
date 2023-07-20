@@ -132,6 +132,7 @@ class Dataset:
             self.write_json(dataset[:TRAIN_SPLIT_IX], OUT_FOLDER / "train.json")        
             self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.json")        
             self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.json")        
+            self.write_json(dataset, OUT_FOLDER / "corpus.json")        
 
 def build_embeds(vocab : Set[str]):
     # embedding model parameters
