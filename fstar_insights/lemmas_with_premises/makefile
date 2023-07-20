@@ -15,7 +15,7 @@ build_raw_dataset:
 	mkdir -p raw_dataset
 	find ${EVEREST_HOME} -type f -name "*.fst" -exec cp {} ./raw_dataset/ \;
 	find ${EVEREST_HOME} -type f -name "*.fsti" -exec cp {} ./raw_dataset/ \;
-	find ${EVEREST_HOME} -type f -name "*.hints" -exec cp {} ./raw_dataset/ \;
+	# find ${EVEREST_HOME} -type f -name "*.hints" -exec cp {} ./raw_dataset/ \;
 	find ${EVEREST_HOME} -type f -name "*.checked" -exec cp {} ./raw_dataset/ \;
 
 

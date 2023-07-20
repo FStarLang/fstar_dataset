@@ -46,16 +46,48 @@ def cleanup(s : str) -> str:
     # strip excessive spaces, tabs, newlines
     return ' '.join(s.split())
 
+@dataclass
+class Pos:
+    line : int
+    col : int
+    ix : Optional[int]
+
+@dataclass
+class Range:
+    start : Pos
+    end : Pos
+
+@dataclass
+class Def:
+    # name : typ := body
+    name : str # name of the definition
+    typ : str # type of the definition
+    body : str # body of the definition
+    filename : str # file this definition came from.
+    file_range : Range # range in file.
+
+@dataclass
+class Corpus:
+    files : List[File]
+
+class PremiseSelectionRecord:
+    defn : str # object that is defined.
+    uses : List[str] # premises that are used.
 
 class Dataset:
-    vocab : Set[str]
-    
-    def write_records(self, records : List[Dict[str, Any]], path : Path):
+    corpus : Corpus
+    records : List[PremiseSelectionRecord]
+    # premise selection examples.
+    def write_jsonl(self, records : List[Dict[str, Any]], path : Path):
         with open(path, "w") as f:
             for record in records:
                 json.dump(record, f)
                 f.write("\n")
-        
+
+    def write_json(self, records : List[Dict[str, Any]], path : Path):
+        with open(path, "w") as f:
+            json.dump(records, f)
+
     def build_random(self):
         DATASET_FOLDER = Path("./dataset/")
         nfiles_nonempty = 0
@@ -75,6 +107,7 @@ class Dataset:
                 nfiles_nonempty += 1
                 j = json.loads(contents)
                 records_sample = [] # small sample of records from a single file
+                file = File()
                 for content in tqdm(j):
                     content["definition"] = cleanup(content["definition"])
                     content["premises"] = list(map(cleanup, content["premises"]))
@@ -96,9 +129,9 @@ class Dataset:
             TEST_SPLIT = int(0.9 * len(dataset))
             OUT_FOLDER = Path(".") / dataset_path
             os.makedirs(OUT_FOLDER, exist_ok=True) 
-            self.write_records(dataset[:TRAIN_SPLIT_IX], OUT_FOLDER / "train.jsonl")        
-            self.write_records(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.jsonl")        
-            self.write_records(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.jsonl")        
+            self.write_json(dataset[:TRAIN_SPLIT_IX], OUT_FOLDER / "train.json")        
+            self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.json")        
+            self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.json")        
 
 def build_embeds(vocab : Set[str]):
     # embedding model parameters

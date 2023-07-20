@@ -168,31 +168,6 @@ let read_checked_file (source_filename:string)
         Some (deps, tc_result.checked_module)
     )
 
-let hints_t = BU.hints
-let print_hints_t (h:hints_t) = 
-  let open BU in
-  print_stderr "Found %s hints\n" [string_of_int (List.length h)];
-  List.iter 
-    (function None -> () | Some h -> print_stderr "hint (%s, %s)\n" [h.hint_name; string_of_int h.hint_index])
-    h
-    
-let read_hints_file (source_filename:string)
-  : hints_t
-  = let hint_file = FStar.Options.hint_file_for_src source_filename in
-    match find_file_in_path hint_file  with  
-    | None -> 
-      print_stderr "Could not find hints file  %s\n" [hint_file];    
-      []
-    | Some fn ->
-      match BU.read_hints fn with
-      | BU.HintsOK h -> 
-        print_stderr "Read hints file succesfully %s\n" [fn];
-        print_hints_t h.hints;
-        h.hints
-      | _ ->
-        print_stderr "Could not read hints file %s\n" [fn];
-        []
-    
 let load_dependences (cfc:checked_file_content)
   : list checked_file_content
   = let dependence_exclusions = ["prims"; "fstar.pervasives.native"; "fstar.pervasives"] in
@@ -251,7 +226,6 @@ type defs_and_premises = {
   definition:string;
   eff: string;
   eff_flags: list string;
-  (* hints: list BU.hint; *)
   mutual_with:list string;
   name: string;
   premises: list string;
@@ -296,17 +270,6 @@ let defs_and_premises_as_json (l:defs_and_premises) =
               ])
  
 
-(* 
-let find_hints_for (h:hints_t) (name:string) = 
-  let open BU in
-  List.collect
-      (fun h ->
-        match h with
-        | Some h when h.hint_name = name -> [h]
-        | _ -> []) h
-*)
-    
-(* let functions_called_by_user_in_def (h:hints_t) (se:sigelt) *)
 let functions_called_by_user_in_def (se:sigelt)
   : list defs_and_premises
   = match se.sigel with
@@ -341,7 +304,6 @@ let functions_called_by_user_in_def (se:sigelt)
           eff_flags = List.map P.cflag_to_string flags;
           mutual_with;
           proof_features = maybe_rec;
-          (* hints = find_hints_for h name *)
         })
         lbs
     | _ -> []
@@ -357,7 +319,6 @@ let dependences_of_definition (source_file:string) (name:string)
           exit 1
         | Some cfc -> cfc
     in
-    let hints = read_hints_file source_file in
     let name = Ident.lid_of_str name in
     let module_deps = load_dependences cfc in
     let _, m = cfc in
@@ -406,7 +367,6 @@ let find_simple_lemmas (source_file:string) : list sigelt =
 let find_defs_and_premises (source_file:string) 
   : list defs_and_premises =
   let sigelts = read_module_sigelts source_file in
-  (* let hints = read_hints_file source_file in *)
   let defs = List.filter is_def sigelts in
   List.collect functions_called_by_user_in_def defs
         

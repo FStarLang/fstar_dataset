@@ -124,7 +124,11 @@ def read_info(f : tarfile.TarFile, info : tarfile.TarInfo, defs : DefinitionsDat
     else:
         assert record.query_name in defs.name2def
         lemma_dict = defs.name2def[record.query_name]
-        out.update(lemma_dict)
+        out["name"] = lemma_dict["name"]
+        out["definition"] = lemma_dict["definition"]
+        out["type"] = lemma_dict["type"]
+        out["effect"] = lemma_dict["effect"]
+        # out.update(lemma_dict)
         json.dump(out, outf)
         outf.write("\n")
         outf.flush()
