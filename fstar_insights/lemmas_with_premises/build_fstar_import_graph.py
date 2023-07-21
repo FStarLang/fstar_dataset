@@ -52,7 +52,8 @@ if __name__ == "__main__":
     parser.add_argument("path", metavar="P")
     parser.add_argument("--outpath", default="file_import_graph.json")
     options = parser.parse_args()
-    out = glob_files(options.path)
+    name2imports = glob_files(options.path)
 
     with open(options.outpath, "w") as f:
-        json.dump(out, f)
+        records = [{"name": name, "imports": name2imports[name]} for name in name2imports]
+        json.dump(records, f)
