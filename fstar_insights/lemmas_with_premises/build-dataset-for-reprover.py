@@ -38,45 +38,62 @@ from pathlib import Path
 import gzip, pickle
 from tqdm import tqdm
 from typing import *
+import typer
+import random
+from dataclasses import dataclass
 
 from openai.embeddings_utils import get_embeddings
+
+app = typer.Typer()
 
 
 def cleanup(s : str) -> str:
     # strip excessive spaces, tabs, newlines
     return ' '.join(s.split())
 
-@dataclass
-class Pos:
-    line : int
-    col : int
-    ix : Optional[int]
-
-@dataclass
-class Range:
-    start : Pos
-    end : Pos
-
-@dataclass
-class Def:
-    # name : typ := body
-    name : str # name of the definition
-    typ : str # type of the definition
-    body : str # body of the definition
-    filename : str # file this definition came from.
-    file_range : Range # range in file.
-
-@dataclass
-class Corpus:
-    files : List[File]
+# @dataclass
+# class Pos:
+#     line : int
+#     col : int
+#     ix : Optional[int]
+# 
+# @dataclass
+# class Range:
+#     start : Pos
+#     end : Pos
+# 
+# @dataclass
+# class Def:
+#     # name : typ := body
+#     name : str # name of the definition
+#     typ : str # type of the definition
+#     body : str # body of the definition
+#     filename : str # file this definition came from.
+#     file_range : Range # range in file.
+# 
+# @dataclass
+# class Corpus:
+#     files : List[File]
 
 class PremiseSelectionRecord:
     defn : str # object that is defined.
     uses : List[str] # premises that are used.
 
 class Dataset:
-    corpus : Corpus
+    # corpus : Corpus
     records : List[PremiseSelectionRecord]
+    nfiles_total : int
+    nfiles_nonempty : int
+    nlemmas : int 
+    vocab : Set[str]
+
+    def __init__(self):
+        self.records = []
+        self.nfiles_total = 0
+        self.nfiles_nonempty = 0
+        self.nlemmas = 0
+        self.vocab = set()
+
     # premise selection examples.
     def write_jsonl(self, records : List[Dict[str, Any]], path : Path):
         with open(path, "w") as f:
@@ -88,43 +105,60 @@ class Dataset:
         with open(path, "w") as f:
             json.dump(records, f)
 
-    def build_random(self):
+    def load_records(self):
         DATASET_FOLDER = Path("./dataset/")
-        nfiles_nonempty = 0
-        nfiles_total = 0
-        nlemmas = 0
         vocab = set()
-        records = []
-        records_sample = [] # small sample of records
         for p in tqdm(DATASET_FOLDER.glob("*.json")):
             print(f"reading file '{p}'")
             with open(p, "r") as f:
-                nfiles_total += 1
+                self.nfiles_total += 1
                 contents = f.read()
-                if not contents:
-                    print(" empty")
-                    continue
-                nfiles_nonempty += 1
-                j = json.loads(contents)
-                records_sample = [] # small sample of records from a single file
-                file = File()
-                for content in tqdm(j):
-                    content["definition"] = cleanup(content["definition"])
-                    content["premises"] = list(map(cleanup, content["premises"]))
-                    content["type"] = cleanup(content["type"])
-                    is_lemma = "lemma" in content["effect_flags"]
-                    nlemmas += int(is_lemma)
-                    content["is_lemma"] = is_lemma
-                    vocab.add(content["definition"])
-                    vocab.add(content["type"])
-                    for premise in content["premises"]:
-                        vocab.add(premise)
-                        records.append(content)
-                        records_sample.append(content)
-        print(f"read '{nfiles_total}' with #nonempty '{nfiles_nonempty}'. Percentage '{100. * nfiles_nonempty/nfiles_total : 4.2f}'")
-        print(f"read '{len(records)}' records with #lemmas '{nlemmas}', Percentage '{100. * nlemmas / len(records) : 4.2f}'")
+                if not contents: continue
+                self.nfiles_nonempty += 1
+                records = json.loads(contents)
+                self.records.extend(records)
 
-        for (dataset_path, dataset) in [("dataset_random", records), ("dataset_random_small", records_sample)]:
+    def build_corpus(self):
+        self.load_records()
+        self.load_records()
+        dataset = []
+        for content in tqdm(self.records):
+            content["definition"] = cleanup(content["definition"])
+            content["premises"] = list(map(cleanup, content["premises"]))
+            content["type"] = cleanup(content["type"])
+            is_lemma = "lemma" in content["effect_flags"]
+            self.nlemmas += int(is_lemma)
+            content["is_lemma"] = is_lemma
+            self.vocab.add(content["definition"])
+            self.vocab.add(content["type"])
+            dataset.append(content)
+
+        self.write_json(dataset, "corpus.json")        
+        with gzip.open("corpus.json.gz", "w") as f:
+            f.write(json.dumps(dataset).encode("utf-8"))
+
+
+    def build_random(self):
+        self.load_records()
+        dataset_full = []
+        for content in tqdm(self.records):
+            content["definition"] = cleanup(content["definition"])
+            content["premises"] = list(map(cleanup, content["premises"]))
+            content["type"] = cleanup(content["type"])
+            is_lemma = "lemma" in content["effect_flags"]
+            nlemmas += int(is_lemma)
+            content["is_lemma"] = is_lemma
+            self.vocab.add(content["definition"])
+            self.vocab.add(content["type"])
+            for premise in content["premises"]:
+                self.vocab.add(premise)
+                dataset_full.append(content)
+        print(f"read '{self.nfiles_total}' with #nonempty '{self.nfiles_nonempty}'. Percentage '{100. * self.nfiles_nonempty/self.nfiles_total : 4.2f}'")
+        print(f"read '{len(self.records)}' records with #lemmas '{self.nlemmas}', Percentage '{100. * self.nlemmas / len(self.records) : 4.2f}'")
+
+        random.shuffle(dataset)
+        dataset_small = dataset[:1000]
+        for (dataset_path, dataset) in [("dataset_random", dataset_full), ("dataset_random_small", dataset_small)]:
             TRAIN_SPLIT_IX = int(0.8 * len(dataset))
             TEST_SPLIT = int(0.9 * len(dataset))
             OUT_FOLDER = Path(".") / dataset_path
@@ -204,6 +238,16 @@ def build_embeds(vocab : Set[str]):
 if False:
     build_embeds()
 
-if __name__ == "__main__":
+@app.command()
+def build_random():
     ds = Dataset()
     ds.build_random()
+
+@app.command()
+def build_corpus():
+    ds = Dataset()
+    ds.build_corpus()
+
+
+if __name__ == "__main__":
+    app()
