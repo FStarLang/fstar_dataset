@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import json
 import argparse
 from typing import *
+import gzip
+from loguru import logger
 
 def glob_files(subfolder : str, name2imports: Dict[str, List[str]]):
     nlogged = 0
@@ -29,8 +31,9 @@ def glob_files(subfolder : str, name2imports: Dict[str, List[str]]):
             imports = [line for line in f.readlines() if line.startswith("open")]
             imports = [line.split("open")[1].strip() for line in imports]
             if name not in name2imports:
-                name2imports[name] = []
-            name2imports[name].extend(imports)
+                name2imports[name] = set()
+            name2imports[name] = name2imports[name].union(imports)
+            # logger.info(f"{name} → '{','.join(imports)}'")
             for dep in imports:
                 graph.add_node(dep)
                 graph.add_edge(name, dep) # make edge cur → dependency
@@ -53,35 +56,40 @@ def process_dataset_for_imports(name2imports: Dict[str, List[str]]):
         f = open(path).read().strip()
         if not f: continue
         for record in json.loads(f):
-            defn = record["name"]
+            defn_name = record["name"]
             filename = pathlib.Path(record["file_name"]).stem
-            def2filename[defn] = filename
+            def2filename[defn_name] = filename
 
     for path in tqdm(glob.glob("./dataset/*.json", recursive=True)):
         f = open(path).read().strip()
         if not f: continue
         for record in json.loads(f):
             for premise in record["premises"]:
-                defn = record["name"]
-                if defn not in name2imports:
-                    name2imports[defn] = []
+                name = pathlib.Path(record["file_name"]).stem
+                if name not in name2imports:
+                    name2imports[name] = set()
 
                 # for each premise, add premise into 
-                # import list of defn.
+                # import list of name.
                 for premise in record["premises"]:
                     if premise not in def2filename: continue
-                    name2imports[defn].append(def2filename[premise])
+                    # logger.info(f"{name} → '{def2filename[premise]}'")
+                    name2imports[name].add(def2filename[premise])
     return name2imports
     
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("path", metavar="P")
-    parser.add_argument("--outpath", default="file_import_graph.json")
+    parser.add_argument("--outpath", default="file_import_graph.json.gz")
     options = parser.parse_args()
     name2imports = process_dataset_for_imports(dict())
     name2imports = glob_files(options.path, name2imports)
 
-    with open(options.outpath, "w") as f:
-        records = [{"name": name, "imports": name2imports[name]} for name in name2imports]
-        json.dump(records, f)
+    for name in list(name2imports.keys())[:10]:
+        logger.info(f"{name} → '{','.join(name2imports[name])}'")
+
+    with gzip.open(options.outpath, "w") as f:
+        records = [{"name": name, "imports": list(name2imports[name])} for name in name2imports]
+        out = json.dumps(records)
+        f.write(out.encode("utf-8"))
