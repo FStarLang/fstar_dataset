@@ -15,7 +15,7 @@ from typing import *
 import gzip
 from loguru import logger
 
-def glob_files(subfolder : str, name2imports: Dict[str, List[str]]):
+def glob_files(subfolder : str, name2imports: Dict[str, Set[str]]):
     nlogged = 0
     graph = nx.DiGraph()
     globs = [f"{subfolder}/**/*.fst", f"{subfolder}/**/*.fsti"]
@@ -50,7 +50,7 @@ def glob_files(subfolder : str, name2imports: Dict[str, List[str]]):
     # plt.show()
     return name2imports
 
-def process_dataset_for_imports(name2imports: Dict[str, List[str]]):
+def process_dataset_for_imports(name2imports: Dict[str, Set[str]]):
     def2filename = dict()
     for path in tqdm(glob.glob("./dataset/*.json", recursive=True)):
         f = open(path).read().strip()
