@@ -142,6 +142,50 @@ class Dataset:
         with gzip.open("corpus.json.gz", "w") as f:
             f.write(json.dumps(dataset).encode("utf-8"))
 
+
+    def build_synthetic_word(self, wordlen: int):
+        """return a made up pronouncable word"""
+        cs = "bcdfghjklmnpqrstvwxzy";
+        vs = "aeiou";
+        out = ""
+        for i in range(wordlen // 2):
+            out += random.choice(cs)
+            if i % 4 == 3: out += "-"
+            out += random.choice(vs)
+        if wordlen % 2 == 1:
+            out += random.choice(cs)
+        return out
+
+
+
+    def build_synthetic(self, count : int):
+        defnames = set()
+        while len(defnames) < count:
+            defnames.add(self.build_synthetic_word(wordlen=6))
+        defnames = list(defnames)
+        dataset = []
+        for name in defnames:
+            record = {}
+            record["name"] = name
+            record["file_name"] = "/home/bollu/dummu.fst"
+            record["type"] = "Dummy"
+            record["definition"] = "DEFINITION"
+            record["start_line"] = "1"
+            record["start_col"] = "42"
+            record["premises"] = random.choices(defnames, k=random.randint(1, 4))
+            dataset.append(record)
+
+        random.shuffle(dataset)
+        dataset_path = f"dataset_synthetic_count={count}"
+        TRAIN_SPLIT_IX = int(0.8 * len(dataset))
+        TEST_SPLIT = int(0.9 * len(dataset))
+        OUT_FOLDER = Path(".") / dataset_path
+        os.makedirs(OUT_FOLDER, exist_ok=True) 
+        self.write_json(dataset[:TRAIN_SPLIT_IX], OUT_FOLDER / "train.json")        
+        self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.json")        
+        self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.json")        
+        self.write_json(dataset, OUT_FOLDER / "corpus.json")        
+
     def build_random(self, cutoff=None):
         self.load_records(cutoff)
         dataset = []
@@ -275,5 +319,9 @@ def build_corpus():
     ds.build_corpus()
 
 
+@app.command()
+def build_synthetic(count : int):
+    ds = Dataset()
+    ds.build_synthetic(count)
 if __name__ == "__main__":
     app()
