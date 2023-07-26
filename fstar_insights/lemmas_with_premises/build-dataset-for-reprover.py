@@ -167,7 +167,7 @@ class Dataset:
         for name in defnames:
             record = {}
             record["name"] = name
-            record["file_name"] = "/home/bollu/dummu.fst"
+            record["file_name"] = "/home/bollu/dummy.fst"
             record["type"] = "Dummy"
             record["definition"] = "DEFINITION"
             record["start_line"] = "1"
@@ -185,6 +185,9 @@ class Dataset:
         self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.json")        
         self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.json")        
         self.write_json(dataset, OUT_FOLDER / "corpus.json")        
+        self.write_json({"dummy": [] }, OUT_FOLDER / "file_import_graph.json")
+
+
 
     def build_random(self, cutoff=None):
         self.load_records(cutoff)
