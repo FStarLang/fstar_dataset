@@ -105,7 +105,8 @@ class Dataset:
         with open(path, "w") as f:
             json.dump(records, f)
 
-    def load_records(self):
+    def load_records(self, cutoff=None):
+        """load all records from the dataset, keeping only 'cutoff' many records'"""
         DATASET_FOLDER = Path("./dataset/")
         vocab = set()
         for p in tqdm(DATASET_FOLDER.glob("*.json")):
@@ -118,8 +119,12 @@ class Dataset:
                 records = json.loads(contents)
                 self.records.extend(records)
 
+                if isinstance(cutoff, int):
+                    if len(self.records) >= cutoff:
+                        self.records = self.records[:cutoff]
+                        return
+
     def build_corpus(self):
-        self.load_records()
         self.load_records()
         dataset = []
         for content in tqdm(self.records):
@@ -137,10 +142,24 @@ class Dataset:
         with gzip.open("corpus.json.gz", "w") as f:
             f.write(json.dumps(dataset).encode("utf-8"))
 
+    def build_random(self, cutoff=None):
+        self.load_records(cutoff)
+        dataset = []
+        for content in tqdm(self.records):
+            content["definition"] = cleanup(content["definition"])
+            content["premises"] = list(map(cleanup, content["premises"]))
+            content["type"] = cleanup(content["type"])
+            is_lemma = "lemma" in content["effect_flags"]
+            self.nlemmas += int(is_lemma)
+            content["is_lemma"] = is_lemma
+            self.vocab.add(content["definition"])
+            self.vocab.add(content["type"])
+            dataset.append(content)
 
-    def build_random(self):
-        self.load_records()
-        dataset_full = []
+        if cutoff is not None:
+            with gzip.open(f"corpus_everest_cutoff={cutoff}.json.gz", "w") as f:
+                f.write(json.dumps(dataset).encode("utf-8"))
+
         for content in tqdm(self.records):
             content["definition"] = cleanup(content["definition"])
             content["premises"] = list(map(cleanup, content["premises"]))
@@ -157,16 +176,17 @@ class Dataset:
         print(f"read '{len(self.records)}' records with #lemmas '{self.nlemmas}', Percentage '{100. * self.nlemmas / len(self.records) : 4.2f}'")
 
         random.shuffle(dataset)
-        dataset_small = dataset[:1000]
-        for (dataset_path, dataset) in [("dataset_random", dataset_full), ("dataset_random_small", dataset_small)]:
-            TRAIN_SPLIT_IX = int(0.8 * len(dataset))
-            TEST_SPLIT = int(0.9 * len(dataset))
-            OUT_FOLDER = Path(".") / dataset_path
-            os.makedirs(OUT_FOLDER, exist_ok=True) 
-            self.write_json(dataset[:TRAIN_SPLIT_IX], OUT_FOLDER / "train.json")        
-            self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.json")        
-            self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.json")        
-            self.write_json(dataset, OUT_FOLDER / "corpus.json")        
+        dataset_path = "dataset_random"
+        if cutoff is not None:
+            dataset_path += f"_cutoff={cutoff}"
+        TRAIN_SPLIT_IX = int(0.8 * len(dataset))
+        TEST_SPLIT = int(0.9 * len(dataset))
+        OUT_FOLDER = Path(".") / dataset_path
+        os.makedirs(OUT_FOLDER, exist_ok=True) 
+        self.write_json(dataset[:TRAIN_SPLIT_IX], OUT_FOLDER / "train.json")        
+        self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.json")        
+        self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.json")        
+        self.write_json(dataset, OUT_FOLDER / "corpus.json")        
 
 def build_embeds(vocab : Set[str]):
     # embedding model parameters
@@ -238,8 +258,14 @@ def build_embeds(vocab : Set[str]):
 if False:
     build_embeds()
 
+
 @app.command()
-def build_random():
+def build_debug():
+    ds = Dataset()
+    ds.build_debug()
+
+@app.command()
+def build_random(cutoff : int = None):
     ds = Dataset()
     ds.build_random()
 
