@@ -37,7 +37,7 @@ def summarize(dataset_glob_regex : str) -> Summary:
                     summary.nlemmas += 1
     summary.npremises_without_defs = len(premises) - len(premises.intersection(defs))
     print("=========")
-    for premise in premises:
+    for premise in sorted(premises):
         if premise not in defs:
             print(premise)
 

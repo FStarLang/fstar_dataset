@@ -119,7 +119,7 @@ let is_lemma (se:sigelt) =
 
 let is_def (se:sigelt) =
   match se.sigel with
-  | Sig_let { lbs=(_, lbs) } -> true
+  | Sig_let _ -> true
   | Sig_bundle _ -> true
   | Sig_assume _ -> true
   | Sig_declare_typ _ -> true
@@ -398,8 +398,7 @@ let find_simple_lemmas (source_file:string) : list sigelt =
 let find_defs_and_premises (source_file:string)
   : list defs_and_premises =
   let sigelts = read_module_sigelts source_file in
-  let defs = List.filter is_def sigelts in
-  List.collect functions_called_by_user_in_def defs
+  List.collect functions_called_by_user_in_def sigelts
 
 let simple_lemma_as_json
       (source_file:string)
@@ -435,12 +434,7 @@ let dump_simple_lemmas_as_json (source_file:string)
     | _ -> BU.print_string (string_of_json (JsonList simple_lemmas))
 
 let dump_all_lemma_premises_as_json (source_file:string)
-  = let lemmas =
-        List.map defs_and_premises_as_json
-                 (find_defs_and_premises source_file)
-    in
-    lemmas
-    (* | _ -> BU.print_string (string_of_json (JsonList lemmas)) *)
+  = List.map defs_and_premises_as_json (find_defs_and_premises source_file)
 
 
 
