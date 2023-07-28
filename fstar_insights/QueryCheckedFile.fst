@@ -152,7 +152,9 @@ let read_checked_file (source_filename:string)
   = let checked_file =
       if BU.ends_with source_filename ".checked"
       then source_filename
-      else if BU.ends_with source_filename ".fst"
+      (* TODO: check that we do not have an fst associated to this fsti. If we do have an fst, then we should ignore
+         the fsti! *)
+      else if BU.ends_with source_filename ".fst" || BU.ends_with source_filename ".fsti"
       then source_filename ^ ".checked"
       else source_filename ^ ".fst.checked"
     in
@@ -274,7 +276,7 @@ let rec functions_called_by_user_in_def (se:sigelt)
           definition = "<DECLARETYP>";
           premises = [];
           eff = "" ;
-          eff_flags = [];
+          eff_flags = []; (* if a declare typ does not have an assume qualified, then the def will show up *)
           mutual_with = [];
           proof_features = [] ;
         }]
@@ -287,6 +289,19 @@ let rec functions_called_by_user_in_def (se:sigelt)
           eff = "" ;
           eff_flags = [];
           mutual_with = [];
+          proof_features = [] ;
+        }]
+    |  Sig_inductive_typ { params; t; lid; mutuals } ->
+        let arr = FStar.Syntax.Util.arrow params (mk_Total t)
+        in
+        [{ source_range = se.sigrng;
+          name = Ident.string_of_lid lid;
+          typ = P.term_to_string arr;
+          definition = "<INDUCTIVETYP>";
+          premises = [];
+          eff = "" ;
+          eff_flags = [];
+          mutual_with = List.map Ident.string_of_lid mutuals;
           proof_features = [] ;
         }]
     | Sig_bundle bundle -> List.collect functions_called_by_user_in_def bundle.ses
