@@ -120,7 +120,9 @@ let is_lemma (se:sigelt) =
 let is_def (se:sigelt) =
   match se.sigel with
   | Sig_let { lbs=(_, lbs) } -> true
-  (* | Sig_bundle _ -> true *)
+  | Sig_bundle _ -> true
+  | Sig_assume _ -> true
+  | Sig_declare_typ _ -> true
   | _ -> false
 
 let is_simple_lemma (se:sigelt) =
@@ -247,16 +249,6 @@ let range_as_json_list (r:Range.range)
      "end_line", JsonInt (Range.line_of_pos end_pos);
      "end_col", JsonInt (Range.col_of_pos end_pos)]
 
-let hint_as_json (h:BU.hint) =
-  let open BU in
-  JsonAssoc [("hint_name", JsonStr h.hint_name);
-             ("hint_index", JsonInt h.hint_index);
-             ("fuel", JsonInt h.fuel);
-             ("ifuel", JsonInt h.ifuel);
-             ("unsat_core", JsonList (List.map JsonStr (dflt [] h.unsat_core)));
-             ("query_elapsed_time", JsonInt h.query_elapsed_time)]
-
-
 let defs_and_premises_as_json (l:defs_and_premises) =
   JsonAssoc ((range_as_json_list l.source_range) @
              [
@@ -271,9 +263,48 @@ let defs_and_premises_as_json (l:defs_and_premises) =
               ])
 
 
-let functions_called_by_user_in_def (se:sigelt)
+
+let rec functions_called_by_user_in_def (se:sigelt)
   : list defs_and_premises
   = match se.sigel with
+    | Sig_declare_typ data ->
+        [{ source_range = se.sigrng;
+          name = Ident.string_of_lid data.lid;
+          typ = P.term_to_string data.t;
+          definition = "<DECLARETYP>";
+          premises = [];
+          eff = "" ;
+          eff_flags = [];
+          mutual_with = [];
+          proof_features = [] ;
+        }]
+    | Sig_assume data ->
+        [{ source_range = se.sigrng;
+          name = Ident.string_of_lid data.lid;
+          typ = P.term_to_string data.phi;
+          definition = "<ASSUME>";
+          premises = [];
+          eff = "" ;
+          eff_flags = [];
+          mutual_with = [];
+          proof_features = [] ;
+        }]
+    | Sig_bundle bundle -> List.collect functions_called_by_user_in_def bundle.ses
+    | Sig_datacon data ->
+        let _, comp = U.arrow_formals_comp data.t in
+        let flags = U.comp_flags comp in
+        let name = Ident.string_of_lid data.lid  in
+        [{ source_range = se.sigrng;
+          name = name;
+          typ = P.term_to_string data.t;
+          definition = "<DATACON>";
+          premises = List.map Ident.string_of_lid
+                              (BU.set_elements (FStar.Syntax.Free.fvars data.t));
+          eff = "" ;
+          eff_flags = [];
+          mutual_with = List.map Ident.string_of_lid data.mutuals ;
+          proof_features = [] ;
+        }]
     | Sig_let { lbs=(is_rec, lbs) } ->
       let maybe_rec =
         match lbs with
@@ -308,7 +339,6 @@ let functions_called_by_user_in_def (se:sigelt)
         })
         lbs
     | _ -> []
-
 
 let dependences_of_definition (source_file:string) (name:string)
   : list string & list sigelt
@@ -409,9 +439,9 @@ let dump_all_lemma_premises_as_json (source_file:string)
         List.map defs_and_premises_as_json
                  (find_defs_and_premises source_file)
     in
-    match lemmas with
-    | [] -> ()
-    | _ -> BU.print_string (string_of_json (JsonList lemmas))
+    lemmas
+    (* | _ -> BU.print_string (string_of_json (JsonList lemmas)) *)
+
 
 
 (* prefer an `fsti` over an `fst` *)
@@ -420,12 +450,11 @@ let dump_dependency_info_as_json (source_file:string)
     match read_checked_file source_file with
     | None -> exit 1
     | Some (cfc_path, (deps, modul))  ->
-      BU.print_string (string_of_json
-        (JsonAssoc [("source_file", JsonStr source_file);
+        [JsonAssoc [("source_file", JsonStr source_file);
                     ("checked_file", JsonStr cfc_path);
                     ("dependencies", JsonList (List.map
                       (fun dep -> JsonStr (BU.dflt "<UNK>" (BU.bind_opt (map_file_name dep) find_file_in_path))) (List.tail deps)));
-                    ("depinfo", JsonBool true)])) (* tag that this is dependency information. Poor man's sum type *)
+                    ("depinfo", JsonBool true)]] (* tag that this is dependency information. Poor man's sum type *)
 
 module JU = FStar.Interactive.JsonHelper
 
@@ -475,10 +504,9 @@ let main () =
     let files = !filenames in
     if !all_defs_and_premises
     then
-      begin
-      List.iter dump_all_lemma_premises_as_json files;
-      List.iter dump_dependency_info_as_json files
-      end
+      let lemmas_premises = List.concatMap dump_all_lemma_premises_as_json files in
+      let deps = List.concatMap dump_dependency_info_as_json files in
+      BU.print_string (string_of_json (JsonAssoc [("defs", JsonList lemmas_premises); ("dependencies", JsonList deps)]))
     else if !simple_lemmas
     then List.iter dump_simple_lemmas_as_json files
     else if !interactive

@@ -6,7 +6,7 @@ import json
 import glob
 from tqdm import tqdm
 from dataclasses import dataclass
-
+from loguru import logger
 
 @dataclass
 class Summary:
@@ -20,29 +20,31 @@ def summarize(dataset_glob_regex : str) -> Summary:
     defs = set()
     premises = set()
     for fp in tqdm(glob.glob(dataset_glob_regex)):
-        print(f"processing {fp}")
+        logger.info(f"processing {fp}")
         with open(fp, "r") as f:
             fstr = f.read().strip()
             if not fstr:
-                print("  empty file. skipping...")
+                logger.info("  empty file. skipping...")
                 continue
             first_record = True
-            records = json.loads(fstr)
+            j = json.loads(fstr)
+            records = j["defs"]
             for record in records:
-                if first_record:
-                    print(f"record keys: '{record.keys()}'")
                 defs.add(record["name"])
                 summary.ntotal += 1
                 premises.update(record["premises"])
                 if "lemma" in record["effect_flags"]:
                     summary.nlemmas += 1
     summary.npremises_without_defs = len(premises) - len(premises.intersection(defs))
+    print("=========")
+    for premise in premises:
+        if premise not in defs:
+            print(premise)
 
     return summary
 
     
 out = summarize("./dataset/*.json")
 print(out)
-
 
 

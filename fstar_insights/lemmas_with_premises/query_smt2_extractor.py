@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Provide path to dataset/ as produced by `summarize_dataset.py`.
+# Read all_queries_sorted file produced by guido.
 from typing import *
 import tarfile
 from tqdm import tqdm
@@ -26,7 +26,9 @@ class DefinitionsDataset:
                 if not fstr:
                     print("  empty file. skipping...")
                     continue
-                for record in json.loads(fstr):
+                j = json.loads(fstr)
+                records = j["defs"]
+                for record in records:
                     assert record["name"] not in self.name2def
                     self.name2def[record["name"]] = record
 
