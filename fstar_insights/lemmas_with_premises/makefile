@@ -20,9 +20,20 @@ build_raw_dataset:
 	# find ${EVEREST_HOME} -type f -name "*.hints" -exec cp {} ./raw_dataset/ \;
 	find ${EVEREST_HOME} -type f -name "*.checked" -exec cp {} ./raw_dataset/ \;
 
+remove_duplicates:
+	@echo "TODO: remove duplicates of paths"
+
+build_corpus_file:
+	./build-dataset-for-reprover.py
+
+build_import_graph:
+	./build_fstar_import_graph.py
 
 everything:
 	build_raw_dataset
 	build
+	remove_duplicates
+	build_corpus_file
+	build_fstar_import_graph
 	find_all
 	zip
