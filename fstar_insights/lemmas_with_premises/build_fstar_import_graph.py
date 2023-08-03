@@ -33,9 +33,10 @@ class Globber:
     source2jsonpath: dict[str, pathlib.Path]
     checked2jsonpath: dict[str, pathlib.Path]
     # defn name -> paths
-    name2checked : Dict[str, str] = dict()
+    name2checked_defn : Dict[str, str] = dict()
+    name2checked_decl : Dict[str, str] = dict()
     name2source : Dict[str, str] = dict()
-    name2jsonpath : Dict[str, pathlib.Path] = dict()
+    # name2jsonpath : Dict[str, pathlib.Path] = dict()
 
     # defn name -> def
     name2defn : Dict[str, Dict[str, Any]] = dict()
@@ -46,9 +47,10 @@ class Globber:
         self.source2jsonpath = dict()
         self.checked2jsonpath = dict()
 
-        self.name2checked = dict()
-        self.name2source = dict()
-        self.name2jsonpath = dict()
+        self.name2checked_defn = dict()
+        self.name2checked_decl = dict()
+        # self.name2source = dict()
+        # self.name2jsonpath = dict()
         self.name2defn = dict()
 
         self.checked2source = dict()
@@ -58,16 +60,18 @@ class Globber:
     def _process_dependency(self, path : pathlib.Path, dep : dict[str, Any]):
         source_name = pathlib.Path(dep["source_file"]).name
         checked_name = pathlib.Path(dep["checked_file"]).name
-        checked_name = checked_name.replace(".fst.checked", ".fsti.checked") # cheat and point everything to `fsti`.
+        # checked_name = checked_name.replace(".fst.checked", ".fsti.checked") # cheat and point everything to `fsti`.
 
         # if the previous def came from an fsti file, then replace the previous def, but not the previous location!
         if source_name in self.source2checked:
             assert source_name in self.source2jsonpath
             logger.warning(f"duplicates of source name '{source_name}' from '{str(path)}'. Previously from '{self.source2jsonpath[source_name]}'")
+            assert False
 
         if checked_name in self.checked2source:
             assert checked_name in self.checked2jsonpath
             logger.warning(f"duplicates of checked name '{checked_name}' from '{str(path)}'. Previous from '{self.checked2jsonpath[checked_name]}'")
+            assert False
 
         self.source2jsonpath[source_name] = path
         self.checked2jsonpath[checked_name] = path
@@ -78,10 +82,10 @@ class Globber:
         # self.checked2imports_graph.add_edge(checked_name, "dummy.checked")
         self.checked2imports_graph.add_edge(checked_name, "prims.fst.checked") # TODO: shouldn't need this, is available?
 
-        # if ".fst.checked" in checked_name:
-        #     fsti_dep = checked_name.split(".fst.checked")[0] + ".fsti.checked"
-        #     logger.info(f"adding fst → fsti dep '{checked_name}' → '{fsti_dep}'")
-        #     self.checked2imports_graph.add_edge(checked_name, fsti_dep) # make edge cur → dependency
+        if ".fst.checked" in checked_name:
+            fsti_dep = checked_name.split(".fst.checked")[0] + ".fsti.checked"
+            logger.info(f"adding fst → fsti dep '{checked_name}' → '{fsti_dep}'")
+            self.checked2imports_graph.add_edge(checked_name, fsti_dep) # make edge cur → dependency
 
         # TODO: this is a hack that adds a dependency of the fsti onto the fst x( 
         # if ".fsti.checked" in checked_name:
@@ -97,7 +101,7 @@ class Globber:
         self.checked2num_unk[checked_name] = num_unk
 
         for imp in imports:
-            imp = imp.replace(".fst.checked", ".fsti.checked") # cheat and only bind to fsti.
+            # imp = imp.replace(".fst.checked", ".fsti.checked") # cheat and only bind to fsti.
             # if "fst" in imp and "fsti" not in imp:
             #     logger.error(f"unexpected 'fst' import '{imp}' in file '{str(path)}'")
             self.checked2imports_graph.add_node(imp)
@@ -131,6 +135,18 @@ class Globber:
         logger.info("built!")
         self._verify_premise_def_relation(subfolder)
 
+    def _raise_verification_error(self, old_def : Dict[str, Any], cur_def: Dict[str, Any]):
+        logger.error(f"old: {old_def}")
+        logger.error(f"cur: {cur_def}")
+
+    @staticmethod
+    def _is_same_record(old : Dict[str, Any], new : Dict[str, Any]):
+        return (old["name"] == new["name"] and \
+                old["start_line"] == new["start_line"] and \
+                old["start_col"] == new["start_col"] and \
+                pathlib.Path(old["file_name"]).name == pathlib.Path(new["file_name"]).name) or \
+                old["definition"] == new["definition"] 
+
     def _verify_premise_def_relation(self, subfolder : str):
         dummy_def_names = set()
         all_def_names = set()
@@ -148,35 +164,75 @@ class Globber:
                 name = defn["name"]
                 source_file_name = pathlib.Path(defn["file_name"]).name.strip()
 
-                skip = False
-                if name in self.name2defn:
-                    # TODO: only keep the defs from the fsti, as it really is an interface file.
-                    # we are currently processing an fsti file.
-                    if "fsti" in str(self.name2jsonpath[name]): continue # does not matter if previously declared in fsti
-                    if self.name2defn[name]["definition"] == "<DECLARETYP>": continue # does not matter if previous defn was <DECLARETYP>
-                    # the source_file_name could say "dummy", so we should look at the pathlib path that this damn thing came from.
-                    if "fsti" in str(path):
-                        skip = True
-                    if not skip: 
-                        logger.error(f"double declaration of '{name}'. Previously declared in '{str(self.name2jsonpath[name])}'. Currently declared from '{str(path)}', current source_file_name: '{source_file_name}'")
-                        assert False
+                    # old: {'file_name': '/home/guido/r/everest/hacl-star/code/bignum/Hacl.Bignum.AlmostMontgomery.fsti', 'start_line': 87, 'start_col': 2, 'end_line': 87, 'end_col': 4, 'definition': '<DECLARETYP>', 'effect': '', 'effect_flags': [], 'mutual_with': [], 'name': 'Hacl.Bignum.AlmostMontgomery.__proj__Mkalmost_mont__item__bn', 'premises': [], 'proof_features': [], 'type': '#t: Hacl.Bignum.Definitions.limb_t -> projectee: Hacl.Bignum.AlmostMontgomery.almost_mont t\n  -> Prims.Tot (Hacl.Bignum.bn t)'}
+                # cur: {'file_name': '/home/guido/r/everest/hacl-star/code/bignum/Hacl.Bignum.AlmostMontgomery.fsti', 'start_line': 87, 'start_col': 2, 'end_line': 87, 'end_col': 4, 'definition': '<DECLARETYP>', 'effect': '', 'effect_flags': [], 'mutual_with': [], 'name': 'Hacl.Bignum.AlmostMontgomery.__proj__Mkalmost_mont__item__bn', 'premises': [], 'proof_features': [], 'type': '#t: Hacl.Bignum.Definitions.limb_t -> projectee: Hacl.Bignum.AlmostMontgomery.almost_mont t\n  -> Prims.Tot (Hacl.Bignum.bn t)'}
 
-                if skip: 
-                    continue # skip this definition processing entirely
+                # === handle source location of declarations (self2checked) ===
+                if source_file_name.endswith("fsti"): #fsti can override fsts
+                    if name in self.name2checked_decl:
+                        overriding_fst = self.name2checked_decl[name].endswith(".fst.checked") # make sure that we are only overriding an fst definition.
+                        old_defn = self.name2defn[name]
+                        one_is_declaretyp = self.name2defn[name]["definition"] == "<DECLARETYP>" or defn["definition"] == "<DECLARETYP>"
+                        is_same = Globber._is_same_record(old_defn, defn)
+                        if not overriding_fst and not is_same and not one_is_declaretyp:
+                            self._raise_verification_error(old_defn, defn)
+                            logger.error(f"is_same: {is_same} | overriding_fst: {overriding_fst}")
+                            logger.error(old_defn["name"] == defn["name"])
+                            logger.error(old_defn["start_line"] == defn["start_line"])
+                            logger.error(old_defn["start_col"] == defn["start_col"])
+                            logger.error(old_defn["file_name"] == defn["file_name"])
+                            assert False
+                    self.name2checked_decl[name] = self.source2checked[source_file_name]
+                elif name not in self.name2checked_decl: # only add stuff from fst once
+                    assert source_file_name.endswith(".fst")
+                    self.name2checked_decl[name] = self.source2checked[source_file_name]
 
-                # self.source2checked["dummy"] = "dummy.checked"
-                if source_file_name not in self.source2checked:
-                    logger.error(f"unable to find checked file for source file '{source_file_name}' from definition '{name}' from json file '{str(path)}'")
-                    continue
+                # === handle source location of definitions (self2checked) ===
+                if source_file_name.endswith("fst"): #fst can override fsti
+                    if name in self.name2checked_defn:
+                        overriding_fsti = self.name2checked_defn[name].endswith(".fst.checked") # make sure that we are only overriding an fst definition.
+                        old_defn = self.name2defn[name]
+                        one_is_declaretyp = self.name2defn[name]["definition"] == "<DECLARETYP>" or defn["definition"] == "<DECLARETYP>"
+                        one_is_assume = self.name2defn[name]["definition"] == "<ASSUME>" or defn["definition"] == "<ASSUME>"
+                        is_same = Globber._is_same_record(old_defn, defn)
+                        # I am overriding my own fsti, this is perectly kosher.
+                        # old_is_same_fsti = self.name2checked_defn[name] == 
+                        if not overriding_fsti and not is_same and not one_is_declaretyp and not one_is_assume and not old_is_same_fsti:
+                            self._raise_verification_error(old_defn, defn)
+                            logger.error(f"is_same: {is_same} | overriding_fsti: {overriding_fsti}")
+                            logger.error(old_defn["name"] == defn["name"])
+                            logger.error(old_defn["start_line"] == defn["start_line"])
+                            logger.error(old_defn["start_col"] == defn["start_col"])
+                            logger.error(old_defn["file_name"] == defn["file_name"])
+                            assert False
+                    self.name2checked_defn[name] = self.source2checked[source_file_name]
+                elif name not in self.name2checked_defn: # only add stuff from fsti once
+                    assert source_file_name.endswith(".fsti")
+                    self.name2checked_defn[name] = self.source2checked[source_file_name]
 
-                self.name2defn[name] = defn
-                self.name2checked[name] = self.source2checked[source_file_name]
-                self.name2source[name] = source_file_name
-                self.name2jsonpath[name] = path
+                # === handle definition ===
+                if name not in self.name2defn: # adding a new definition
+                    self.name2defn[name] = defn
+                elif defn["definition"] == "<DECLARETYP>": # overriding a declaretyp definition
+                    self.name2defn[name] = defn # ov
+
+                assert name in self.name2checked_defn
+                assert name in self.name2checked_decl
+                assert name in self.name2defn
+                # if source_file_name not in self.source2checked:
+                #     logger.error(f"unable to find checked file for source file '{source_file_name}' from definition '{name}' from json file '{str(path)}'")
+                #     continue
+
+                # print(source_file_name)
+                # self.name2defn[name] = defn
+                # self.name2checked_defn[name] = self.source2checked[source_file_name]
+                # # self.name2source[name] = source_file_name
+                # # self.name2jsonpath[name] = path
 
         num_without_correct_edges = 0
         num_total = 0
         incorrect_edges_dump = ""
+        num_missing_edge = 0
         for path_str in tqdm(paths):
             path = pathlib.Path(path_str)
             dataset = open(path).read()
@@ -184,18 +240,19 @@ class Globber:
             dataset = json.loads(dataset)
             for defn in dataset["defs"]:
                 name = defn["name"]
-                if name not in self.name2checked: continue
-                def_checked = self.name2checked[name]
+                if name not in self.name2checked_defn: continue
+                def_checked = self.name2checked_defn[name]
                 for premise in defn["premises"]:
-                    if premise not in self.name2checked:
-                        logger.error(f"premise without checked file '{premise}'")
+                    if premise not in self.name2checked_decl:
+                        logger.error(f"premise without checked declaration file '{premise}'")
                         continue
-                    premise_checked = self.name2checked[premise]
+                    premise_checked = self.name2checked_decl[premise]
                     num_total += 1
                     if not self.checked2imports_graph_trans.has_edge(def_checked, premise_checked):
                         num_without_correct_edges += 1
-                        logger.error(f"unable to find expected edge from '{def_checked}' → '{premise_checked}'")
-                        logger.error(f"  this was on account of def '{name}' for premise '{premise}' in '{str(path)}'")
+                        logger.error(f"unable to find expected edge from def '{name}:{def_checked}' → premise '{premise}:{premise_checked}'")
+                        # logger.error(f"  this was on account of def '{name}' for premise '{premise}' in '{str(path)}'")
+                        num_missing_edge += 1
         logger.info(f"#defs without correct edges: {num_without_correct_edges}  / {num_total} = {num_without_correct_edges/num_total*100:4.2f} %%")
         num_dummy_defs = len(dummy_def_names); num_total_defs = len(all_def_names)
         logger.info(f"#dummy defs: {num_dummy_defs} / {num_total_defs} = {num_dummy_defs / num_total_defs * 100:4.2f} %%")
