@@ -1,4 +1,4 @@
-.PHONY: find_all build build_raw_dataset
+.PHONY: find_all build build_raw_dataset build_raw_dataset_from_gzip
 
 zip:
 	tar -czv -f dataset.tar.gz ./dataset
@@ -12,7 +12,11 @@ find_all: build
 build:
 	make -C ../ -j
 
-build_raw_dataset:
+
+build_raw_dataset_from_gzip: 
+	./everest_full_tar_premise_extractor.py
+
+build_raw_dataset_from_src:
 	echo "finding in '${EVEREST_HOME}'"
 	mkdir -p raw_dataset
 	find ${EVEREST_HOME} -type f -name "*.fst" -exec cp {} ./raw_dataset/ \;
@@ -30,10 +34,10 @@ build_import_graph:
 	./build_fstar_import_graph.py
 
 everything:
-	build_raw_dataset
+	build_raw_dataset_from_gzip
 	build
+	find_all
 	remove_duplicates
 	build_corpus_file
 	build_fstar_import_graph
-	find_all
 	zip

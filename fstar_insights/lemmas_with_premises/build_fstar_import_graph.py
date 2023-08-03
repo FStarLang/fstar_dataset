@@ -60,6 +60,7 @@ class Globber:
         checked_name = pathlib.Path(dep["checked_file"]).name
         checked_name = checked_name.replace(".fst.checked", ".fsti.checked") # cheat and point everything to `fsti`.
 
+        # if the previous def came from an fsti file, then replace the previous def, but not the previous location!
         if source_name in self.source2checked:
             assert source_name in self.source2jsonpath
             logger.warning(f"duplicates of source name '{source_name}' from '{str(path)}'. Previously from '{self.source2jsonpath[source_name]}'")
@@ -163,7 +164,7 @@ class Globber:
                 if skip: 
                     continue # skip this definition processing entirely
 
-                self.source2checked["dummy"] = "dummy.checked"
+                # self.source2checked["dummy"] = "dummy.checked"
                 if source_file_name not in self.source2checked:
                     logger.error(f"unable to find checked file for source file '{source_file_name}' from definition '{name}' from json file '{str(path)}'")
                     continue
