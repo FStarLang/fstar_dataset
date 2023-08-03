@@ -35,7 +35,7 @@ class Globber:
     # defn name -> paths
     name2checked : Dict[str, str] = dict()
     name2source : Dict[str, str] = dict()
-    name2jsonpath : Dict[str, str] = dict()
+    name2jsonpath : Dict[str, pathlib.Path] = dict()
 
     # defn name -> def
     name2defn : Dict[str, Dict[str, Any]] = dict()
@@ -58,6 +58,7 @@ class Globber:
     def _process_dependency(self, path : pathlib.Path, dep : dict[str, Any]):
         source_name = pathlib.Path(dep["source_file"]).name
         checked_name = pathlib.Path(dep["checked_file"]).name
+        checked_name = checked_name.replace(".fst.checked", ".fsti.checked") # cheat and point everything to `fsti`.
 
         if source_name in self.source2checked:
             assert source_name in self.source2jsonpath
@@ -74,18 +75,18 @@ class Globber:
         self.source2checked[source_name] = checked_name
         self.checked2imports_graph.add_node(checked_name)
         # self.checked2imports_graph.add_edge(checked_name, "dummy.checked")
-        self.checked2imports_graph.add_edge(checked_name, "prims.fst.checked")
+        self.checked2imports_graph.add_edge(checked_name, "prims.fst.checked") # TODO: shouldn't need this, is available?
 
-        if ".fst.checked" in checked_name:
-            fsti_dep = checked_name.split(".fst.checked")[0] + ".fsti.checked"
-            logger.info(f"adding fst → fsti dep '{checked_name}' → '{fsti_dep}'")
-            self.checked2imports_graph.add_edge(checked_name, fsti_dep) # make edge cur → dependency
+        # if ".fst.checked" in checked_name:
+        #     fsti_dep = checked_name.split(".fst.checked")[0] + ".fsti.checked"
+        #     logger.info(f"adding fst → fsti dep '{checked_name}' → '{fsti_dep}'")
+        #     self.checked2imports_graph.add_edge(checked_name, fsti_dep) # make edge cur → dependency
 
         # TODO: this is a hack that adds a dependency of the fsti onto the fst x( 
-        if ".fsti.checked" in checked_name:
-            fst_dep = checked_name.split(".fsti.checked")[0] + ".fst.checked"
-            logger.info(f"adding fsti → fst dep '{checked_name}' → '{fst_dep}'")
-            self.checked2imports_graph.add_edge(checked_name, fst_dep) # make edge cur → dependency
+        # if ".fsti.checked" in checked_name:
+        #     fst_dep = checked_name.split(".fsti.checked")[0] + ".fst.checked"
+        #     logger.info(f"adding fsti → fst dep '{checked_name}' → '{fst_dep}'")
+        #     self.checked2imports_graph.add_edge(checked_name, fst_dep) # make edge cur → dependency
 
         imports = sorted(list(set([pathlib.Path(imp).name for imp in dep["dependencies"]])))
         self.checked2imports[checked_name] = imports
@@ -95,14 +96,18 @@ class Globber:
         self.checked2num_unk[checked_name] = num_unk
 
         for imp in imports:
+            imp = imp.replace(".fst.checked", ".fsti.checked") # cheat and only bind to fsti.
+            # if "fst" in imp and "fsti" not in imp:
+            #     logger.error(f"unexpected 'fst' import '{imp}' in file '{str(path)}'")
             self.checked2imports_graph.add_node(imp)
             self.checked2imports_graph.add_edge(checked_name, imp) # make edge cur → dependency
+            logger.info(f"adding dependency {checked_name} → {imp}")
 
 
     def glob_files(self, subfolder : str):
-        paths = list(glob.glob(f"{subfolder}/**/*.json", recursive=True))
-        for path in tqdm(paths):
-            path = pathlib.Path(path)
+        paths_str = list(glob.glob(f"{subfolder}/**/*.json", recursive=True))
+        for path_str in tqdm(paths_str):
+            path = pathlib.Path(path_str)
             dataset_str = open(path).read()
             if not dataset_str.strip(): continue # some files are empty
             dataset = json.loads(dataset_str)
@@ -126,18 +131,26 @@ class Globber:
         self._verify_premise_def_relation(subfolder)
 
     def _verify_premise_def_relation(self, subfolder : str):
+        dummy_def_names = set()
+        all_def_names = set()
         paths = list(glob.glob(f"{subfolder}/**/*.json", recursive=True))
-        for path in tqdm(paths):
-            path = pathlib.Path(path)
+        for path_str in tqdm(paths):
+            path = pathlib.Path(path_str)
             dataset_str = open(path).read()
             if not dataset_str.strip(): continue # some files are empty
             dataset = json.loads(dataset_str)
             for defn in dataset["defs"]:
+                all_def_names.add(defn["name"])
+                if "dummy" in defn["file_name"]:
+                    dummy_def_names.add(defn["name"])
+                    continue # skip all dummy defs.
                 name = defn["name"]
                 source_file_name = pathlib.Path(defn["file_name"]).name.strip()
 
                 skip = False
                 if name in self.name2defn:
+                    # TODO: only keep the defs from the fsti, as it really is an interface file.
+                    # we are currently processing an fsti file.
                     if "fsti" in str(self.name2jsonpath[name]): continue # does not matter if previously declared in fsti
                     if self.name2defn[name]["definition"] == "<DECLARETYP>": continue # does not matter if previous defn was <DECLARETYP>
                     # the source_file_name could say "dummy", so we should look at the pathlib path that this damn thing came from.
@@ -163,8 +176,8 @@ class Globber:
         num_without_correct_edges = 0
         num_total = 0
         incorrect_edges_dump = ""
-        for path in tqdm(paths):
-            path = pathlib.Path(path)
+        for path_str in tqdm(paths):
+            path = pathlib.Path(path_str)
             dataset = open(path).read()
             if not dataset.strip(): continue # some files are empty
             dataset = json.loads(dataset)
@@ -183,35 +196,37 @@ class Globber:
                         logger.error(f"unable to find expected edge from '{def_checked}' → '{premise_checked}'")
                         logger.error(f"  this was on account of def '{name}' for premise '{premise}' in '{str(path)}'")
         logger.info(f"#defs without correct edges: {num_without_correct_edges}  / {num_total} = {num_without_correct_edges/num_total*100:4.2f} %%")
+        num_dummy_defs = len(dummy_def_names); num_total_defs = len(all_def_names)
+        logger.info(f"#dummy defs: {num_dummy_defs} / {num_total_defs} = {num_dummy_defs / num_total_defs * 100:4.2f} %%")
 
                 
 
-def process_dataset_for_imports(file2imports: Dict[str, Set[str]]):
-    def2filename = dict()
-    for path in tqdm(glob.glob("./dataset/*.json", recursive=True)):
-        f = open(path).read().strip()
-        if not f.strip(): continue
-        for record in json.loads(f)["defs"]:
-            defn_name = record["name"]
-            filename = pathlib.Path(record["file_name"]).stem
-            def2filename[defn_name] = filename
-
-    for path in tqdm(glob.glob("./dataset/*.json", recursive=True)):
-        f = open(path).read().strip()
-        if not f: continue
-        for record in json.loads(f)["defs"]:
-            for premise in record["premises"]:
-                name = pathlib.Path(record["file_name"]).stem
-                if name not in file2imports:
-                    file2imports[name] = set()
-
-                # for each premise, add premise into 
-                # import list of name.
-                for premise in record["premises"]:
-                    if premise not in def2filename: continue
-                    # logger.info(f"{name} → '{def2filename[premise]}'")
-                    file2imports[name].add(def2filename[premise])
-    return file2imports
+# def process_dataset_for_imports(file2imports: Dict[str, Set[str]]):
+#     def2filename = dict()
+#     for path in tqdm(glob.glob("./dataset/*.json", recursive=True)):
+#         f = open(path).read().strip()
+#         if not f.strip(): continue
+#         for record in json.loads(f)["defs"]:
+#             defn_name = record["name"]
+#             filename = pathlib.Path(record["file_name"]).stem
+#             def2filename[defn_name] = filename
+# 
+#     for path in tqdm(glob.glob("./dataset/*.json", recursive=True)):
+#         f = open(path).read().strip()
+#         if not f: continue
+#         for record in json.loads(f)["defs"]:
+#             for premise in record["premises"]:
+#                 name = pathlib.Path(record["file_name"]).stem
+#                 if name not in file2imports:
+#                     file2imports[name] = set()
+# 
+#                 # for each premise, add premise into 
+#                 # import list of name.
+#                 for premise in record["premises"]:
+#                     if premise not in def2filename: continue
+#                     # logger.info(f"{name} → '{def2filename[premise]}'")
+#                     file2imports[name].add(def2filename[premise])
+#     return file2imports
     
 
 # def verify_name2imports(file2imports: dict):
@@ -323,3 +338,6 @@ if __name__ == "__main__":
 #       "depinfo": true
 #     }
 #   ]
+# a.fsti: provides a signature for 'val f'
+# b.fst: make use of 'a.f'
+# the defn of f is not in scope for b, only the signature is.
