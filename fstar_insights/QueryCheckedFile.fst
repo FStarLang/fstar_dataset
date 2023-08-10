@@ -50,20 +50,24 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
 
   let map_file_name =
     let files = BU.mk_ref None in
-    let find_file f files =
-      let fsti = f ^ ".fsti.checked" in
-      match List.assoc fsti files with
-      | None -> List.assoc #string #string (f ^ ".fst.checked") files
-      | Some f -> Some f
+    let find_file f files is_friend =
+      if is_friend
+      then List.assoc #string #string (f ^ ".fst.checked") files
+      else (//prefer .fsti
+        let fsti = f ^ ".fsti.checked" in
+        match List.assoc fsti files with
+        | None -> List.assoc #string #string (f ^ ".fst.checked") files
+        | Some f -> Some f
+      )
     in
-    fun f ->
+    fun f is_friend ->
       match !files with
       | None ->
         let fns = load_file_names () in
         files := Some fns;
-        find_file f fns
+        find_file f fns is_friend
       | Some fns ->
-        find_file f fns
+        find_file f fns is_friend
 
   let find_file_in_path f =
     match List.tryFind (fun i -> BU.file_exists (BU.concat_dir_filename i f)) !includes with
@@ -143,7 +147,11 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
   let is_sigelt_ghost (se:sigelt) = check_type se is_gtot_arrow
   let is_sigelt_lemma (se:sigelt) = check_type se is_lemma_arrow
 
-  let checked_file_content = list string & modul
+  type checked_file_content = {
+    friends:list string;
+    deps:list string;
+    m:modul
+  }
   let checked_files : BU.smap checked_file_content = BU.smap_create 100
   let source_file_lines = list string
   let source_files : BU.smap source_file_lines = BU.smap_create 100
@@ -171,9 +179,10 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
         | None ->
           print_stderr "Could not load %s\n" [checked_file_path];
           None
-        | Some (deps, tc_result) ->
-          BU.smap_add checked_files source_filename (deps, tc_result.checked_module);
-          Some (checked_file_path, (deps, tc_result.checked_module))
+        | Some (parsing_data, deps, tc_result) ->
+          let cfc = {friends=List.map Ident.string_of_lid (FStar.Parser.Dep.friends parsing_data); deps; m = tc_result.checked_module} in
+          BU.smap_add checked_files source_filename cfc;
+          Some (checked_file_path, cfc)
       )
 
   let read_source_file (source_filename:string)
@@ -228,13 +237,9 @@ let substring str start fin =
       | None -> None
       | Some (_, lines) ->
         let (start_line, start_col), (end_line, end_col) = range_start_end r in
-      BU.print1 "Taking range %s\n" (Range.string_of_range r);
-      BU.print "lines are [%s]\n" [String.concat "; " lines];
-      let lines = drop (start_line - 1) lines in
-      BU.print "suffix lines are [%s]\n" [String.concat "; " lines];
-      let lines = take (end_line - start_line + 1) lines in
-      BU.print "cropped lines are [%s]\n" [String.concat "; " lines];
-      let lines = 
+        let lines = drop (start_line - 1) lines in
+        let lines = take (end_line - start_line + 1) lines in
+        let lines = 
           match lines with
           | [] -> []
           | [start_line] ->
@@ -244,10 +249,11 @@ let substring str start fin =
             let prefix, [last] = List.splitAt (List.length lines - 1) lines in
             let last = substring last 0 end_col in
             prefix @ [last]
-      in
-      BU.print "Final lines are [%s]\n" [String.concat "; " lines];      
-      Some (String.concat "\n" lines)
+        in
+        Some (String.concat "\n" lines)
       
+let is_friend cfc dep = 
+     List.existsb (fun f -> f = dep) cfc.friends
 
 let load_dependences (cfc:checked_file_content)
   : list checked_file_content
@@ -255,7 +261,7 @@ let load_dependences (cfc:checked_file_content)
     let should_exclude dep =
         BU.for_some (fun x -> String.lowercase dep = x) dependence_exclusions
     in
-    let deps, _ = cfc in
+    let {friends;deps} = cfc in
     let all_deps = BU.smap_create 42 in
     let add_dep d = BU.smap_add all_deps d true in
     let dep_exists d =
@@ -264,6 +270,7 @@ let load_dependences (cfc:checked_file_content)
         | _ -> false
     in
     List.iter add_dep deps;
+    let is_friend = is_friend cfc in
     let rec aux (remaining_deps:list string)
                 (modules:list checked_file_content)
       : list checked_file_content
@@ -274,7 +281,7 @@ let load_dependences (cfc:checked_file_content)
           then aux deps modules
           else (
           let fn =
-            match map_file_name dep with
+            match map_file_name dep (is_friend dep) with
             | None -> dep
             | Some f -> f
           in
@@ -293,7 +300,7 @@ let load_dependences (cfc:checked_file_content)
                      if dep_exists d
                      then false
                      else (add_dep d; true))
-                  (fst cfc)
+                  cfc.deps
               in
               aux (deps@more_deps) (cfc::modules)
             )
@@ -355,16 +362,34 @@ let heal_dummy_file_name (file_name : string) (r : Range.range) : Range.range
   Range.mk_range (if Range.file_of_range r = " dummy" then file_name else Range.file_of_range r)
          (Range.start_of_range r) (Range.end_of_range r)
 
+module Parser = FStar.Parser.ParseIt
 let extract_def_and_typ_from_source_lines rng =
   let source_lines = read_source_file_range rng in
   match source_lines with
-  | None -> "<UNK>", "<UNK>"
-  | Some lines -> lines, "<UNK>"
-    
+  | None -> "<UNK>", None
+  | Some lines -> 
+    let open Parser in
+    let (start_line, start_col), _ = range_start_end rng in
+    let frag = {
+      frag_fname = Range.file_of_range rng;
+      frag_text = lines;
+      frag_line = start_line;
+      frag_col = start_col  
+    } in
+    let parse_result = parse (Fragment frag) in
+    lines, Some parse_result
+
+let extract_typ_from_parse_result_of_let_binding parse_result_opt =
+  let open Parser in
+  match parse_result_opt with
+  | Some (ASTFragment (Inr [decl], _)) -> ""
+  | _ -> "<UNK>"
+
 
 let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
   : list defs_and_premises
-  = let source_def, source_typ = extract_def_and_typ_from_source_lines se.sigrng in
+  = let source_def, parse_result_opt = extract_def_and_typ_from_source_lines se.sigrng in
+    let source_typ = "<UNK>" in
     match se.sigel with
     | Sig_declare_typ data ->
         [{ source_range = heal_dummy_file_name file_name se.sigrng;
@@ -442,6 +467,7 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
         | Inl _ -> failwith "Unexpected lb name"
         | Inr fv -> Ident.string_of_lid fv.fv_name.v
       in
+      let source_typ = extract_typ_from_parse_result_of_let_binding parse_result_opt in
       List.map (fun lb ->
         let _, comp = U.arrow_formals_comp lb.lbtyp in
         let flags = U.comp_flags comp in
@@ -474,7 +500,7 @@ let dependences_of_definition (source_file:string) (name:string)
     in
     let name = Ident.lid_of_str name in
     let module_deps = load_dependences cfc in
-    let _, m = cfc in
+    let {m} = cfc in
     let rec prefix_until_name out ses =
       match ses with
       | [] -> [], List.rev out
@@ -489,7 +515,7 @@ let dependences_of_definition (source_file:string) (name:string)
           prefix_until_name (se :: out) ses
       )
     in
-    let ses = List.collect (fun (_, m) -> m.declarations) module_deps in
+    let ses = List.collect (fun cfc -> cfc.m.declarations) module_deps in
     let user_called_lemmas, local_deps = prefix_until_name [] m.declarations in
     user_called_lemmas, local_deps @ ses
 
@@ -502,7 +528,7 @@ let read_module_sigelts (source_file:string) : list sigelt =
   try
     match read_checked_file source_file with
     | None -> exit 1
-    | Some (_cfc_path, (deps, modul)) -> modul.declarations
+    | Some (_cfc_path, cfc) -> cfc.m.declarations
   with
   | e ->
     match FStar.Errors.issue_of_exn e with
@@ -565,11 +591,13 @@ let dump_dependency_info_as_json (source_file:string)
   =
     match read_checked_file source_file with
     | None -> exit 1
-    | Some (cfc_path, (deps, modul))  ->
+    | Some (cfc_path, cfc) ->
         [JsonAssoc [("source_file", JsonStr source_file);
                     ("checked_file", JsonStr cfc_path);
-                    ("dependencies", JsonList (List.map
-                      (fun dep -> JsonStr (BU.dflt "<UNK>" (BU.bind_opt (map_file_name dep) find_file_in_path))) (List.tail deps)));
+                    ("dependencies", JsonList (
+                          List.map
+                             (fun dep -> JsonStr (BU.dflt ("<UNK>:"^dep) (BU.bind_opt (map_file_name dep (is_friend cfc dep)) find_file_in_path)))
+                             (List.tail cfc.deps)));
                     ("depinfo", JsonBool true)]] (* tag that this is dependency information. Poor man's sum type *)
 
 module JU = FStar.Interactive.JsonHelper
