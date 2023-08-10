@@ -164,9 +164,6 @@ class Globber:
                 name = defn["name"]
                 source_file_name = pathlib.Path(defn["file_name"]).name.strip()
 
-                    # old: {'file_name': '/home/guido/r/everest/hacl-star/code/bignum/Hacl.Bignum.AlmostMontgomery.fsti', 'start_line': 87, 'start_col': 2, 'end_line': 87, 'end_col': 4, 'definition': '<DECLARETYP>', 'effect': '', 'effect_flags': [], 'mutual_with': [], 'name': 'Hacl.Bignum.AlmostMontgomery.__proj__Mkalmost_mont__item__bn', 'premises': [], 'proof_features': [], 'type': '#t: Hacl.Bignum.Definitions.limb_t -> projectee: Hacl.Bignum.AlmostMontgomery.almost_mont t\n  -> Prims.Tot (Hacl.Bignum.bn t)'}
-                # cur: {'file_name': '/home/guido/r/everest/hacl-star/code/bignum/Hacl.Bignum.AlmostMontgomery.fsti', 'start_line': 87, 'start_col': 2, 'end_line': 87, 'end_col': 4, 'definition': '<DECLARETYP>', 'effect': '', 'effect_flags': [], 'mutual_with': [], 'name': 'Hacl.Bignum.AlmostMontgomery.__proj__Mkalmost_mont__item__bn', 'premises': [], 'proof_features': [], 'type': '#t: Hacl.Bignum.Definitions.limb_t -> projectee: Hacl.Bignum.AlmostMontgomery.almost_mont t\n  -> Prims.Tot (Hacl.Bignum.bn t)'}
-
                 # === handle source location of declarations (self2checked) ===
                 if source_file_name.endswith("fsti"): #fsti can override fsts
                     if name in self.name2checked_decl:
@@ -214,20 +211,11 @@ class Globber:
                 if name not in self.name2defn: # adding a new definition
                     self.name2defn[name] = defn
                 elif defn["definition"] == "<DECLARETYP>": # overriding a declaretyp definition
-                    self.name2defn[name] = defn # ov
+                    self.name2defn[name] = defn # allowed
 
                 assert name in self.name2checked_defn
                 assert name in self.name2checked_decl
                 assert name in self.name2defn
-                # if source_file_name not in self.source2checked:
-                #     logger.error(f"unable to find checked file for source file '{source_file_name}' from definition '{name}' from json file '{str(path)}'")
-                #     continue
-
-                # print(source_file_name)
-                # self.name2defn[name] = defn
-                # self.name2checked_defn[name] = self.source2checked[source_file_name]
-                # # self.name2source[name] = source_file_name
-                # # self.name2jsonpath[name] = path
 
         num_without_correct_edges = 0
         num_total = 0
