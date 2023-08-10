@@ -1,177 +1,253 @@
 (*
 Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where the
-`queries.jsonl` has been produced from the raw `smt2` queries that are sent to Z3.
-These raw `smt2` queries must have been gathered with an invocation with
-  $ export OTHERFLAGS="--z3refresh --log_queries" <build-command-such-as-`make`>.
-Authors: Nikhil Swamy, Saikat Chakrabory, Siddharth Bhat
-*)
-module QueryCheckedFile
-open FStar.Compiler
-open FStar.Compiler.Effect
-open FStar.CheckedFiles
-open FStar.Compiler.List
-module BU = FStar.Compiler.Util
-module SMT = FStar.SMTEncoding.Solver
-module TcEnv = FStar.TypeChecker.Env
-module TcTerm = FStar.TypeChecker.TcTerm
-module Rel = FStar.TypeChecker.Rel
-module NBE = FStar.TypeChecker.NBE
-module List = FStar.Compiler.List
-open FStar.Syntax.Syntax
-module U = FStar.Syntax.Util
-module SS = FStar.Syntax.Subst
-module P = FStar.Syntax.Print
+  `queries.jsonl` has been produced from the raw `smt2` queries that are sent to Z3.
+  These raw `smt2` queries must have been gathered with an invocation with
+    $ export OTHERFLAGS="--z3refresh --log_queries" <build-command-such-as-`make`>.
+  Authors: Nikhil Swamy, Saikat Chakrabory, Siddharth Bhat
+  *)
+  module QueryCheckedFile
+  open FStar.Compiler
+  open FStar.Compiler.Effect
+  open FStar.CheckedFiles
+  open FStar.Compiler.List
+  module BU = FStar.Compiler.Util
+  module SMT = FStar.SMTEncoding.Solver
+  module TcEnv = FStar.TypeChecker.Env
+  module TcTerm = FStar.TypeChecker.TcTerm
+  module Rel = FStar.TypeChecker.Rel
+  module NBE = FStar.TypeChecker.NBE
+  module List = FStar.Compiler.List
+  open FStar.Syntax.Syntax
+  module U = FStar.Syntax.Util
+  module SS = FStar.Syntax.Subst
+  module P = FStar.Syntax.Print
 
-let includes : ref (list string) = BU.mk_ref []
-let interactive : ref bool = BU.mk_ref false
-let add_include s = includes := s :: !includes
-let set_interactive () = interactive := true
-let simple_lemmas : ref bool = BU.mk_ref false
-let set_simple_lemmas () = simple_lemmas := true
-let all_defs_and_premises : ref bool = BU.mk_ref false
-let set_all_defs_and_premises () = all_defs_and_premises := true
-let options : list FStar.Getopt.opt =
-  let open FStar.Getopt in
-  [
-    (noshort, "include", OneArg (add_include, "include"), "include path");
-    (noshort, "find_simple_lemmas", ZeroArgs set_simple_lemmas, "scan a file for simple lemmas, dump output as json");
-    (noshort, "all_defs_and_premises", ZeroArgs set_all_defs_and_premises, "scan a file for all definitions, dump their names, defs, types, premises, etc. as json");
-    (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");
-  ]
+  let includes : ref (list string) = BU.mk_ref []
+  let interactive : ref bool = BU.mk_ref false
+  let add_include s = includes := s :: !includes
+  let set_interactive () = interactive := true
+  let simple_lemmas : ref bool = BU.mk_ref false
+  let set_simple_lemmas () = simple_lemmas := true
+  let all_defs_and_premises : ref bool = BU.mk_ref false
+  let set_all_defs_and_premises () = all_defs_and_premises := true
+  let options : list FStar.Getopt.opt =
+    let open FStar.Getopt in
+    [
+      (noshort, "include", OneArg (add_include, "include"), "include path");
+      (noshort, "find_simple_lemmas", ZeroArgs set_simple_lemmas, "scan a file for simple lemmas, dump output as json");
+      (noshort, "all_defs_and_premises", ZeroArgs set_all_defs_and_premises, "scan a file for all definitions, dump their names, defs, types, premises, etc. as json");
+      (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");
+    ]
 
-let load_file_names () =
-  let fns =
-    List.collect
-      (fun inc -> List.map (fun fn -> String.lowercase fn, fn)
-                        (BU.readdir inc))
-      !includes
-  in
-  fns
-
-let map_file_name =
-  let files = BU.mk_ref None in
-  let find_file f files =
-    let fsti = f ^ ".fsti.checked" in
-    match List.assoc fsti files with
-    | None -> List.assoc #string #string (f ^ ".fst.checked") files
-    | Some f -> Some f
-  in
-  fun f ->
-    match !files with
-    | None ->
-      let fns = load_file_names () in
-      files := Some fns;
-      find_file f fns
-    | Some fns ->
-      find_file f fns
-
-let find_file_in_path f =
-  match List.tryFind (fun i -> BU.file_exists (BU.concat_dir_filename i f)) !includes with
-  | None -> None
-  | Some i -> Some (BU.concat_dir_filename i f)
-
-let is_tot_arrow (t:typ) =
-    let _, comp = U.arrow_formals_comp_ln t in
-    U.is_total_comp comp
-
-let is_gtot_arrow (t:typ) =
-    let _, comp = U.arrow_formals_comp_ln t in
-    not (U.is_total_comp comp) &&
-    U.is_tot_or_gtot_comp comp
-
-let is_lemma_arrow (t:typ) =
-    let _, comp = U.arrow_formals_comp_ln t in
-    Ident.lid_equals (U.comp_effect_name comp)
-                     (FStar.Parser.Const.effect_Lemma_lid)
-
-let is_simple_definition (t:term) : ML bool =
-  let t = U.unascribe t in
-  let _, body, _ = U.abs_formals_maybe_unascribe_body true t in
-  let rec aux body : ML bool =
-    let body = U.unascribe body in
-    match (SS.compress body).n with
-    | Tm_bvar _
-    | Tm_name _
-    | Tm_fvar _
-    | Tm_uinst _
-    | Tm_constant _
-    | Tm_type _
-    | Tm_arrow _
-    | Tm_refine _
-    | Tm_quoted _ -> true
-    | Tm_app { args } ->
-      List.for_all (fun (x, _) -> aux x) args
-    | Tm_let { lbs=(false, [lb]); body } ->
-      aux lb.lbdef && aux body
-    | Tm_meta { tm=t } ->
-      aux t
-    | _ -> false
-  in
-  match (SS.compress body).n with
-  | Tm_constant _ -> false //too simple
-  | _ -> aux body
-
-let is_lemma (se:sigelt) =
-  match se.sigel with
-  | Sig_let { lbs=(_, lbs) } ->
-    List.for_all (fun lb -> is_lemma_arrow lb.lbtyp) lbs
-  | _ -> false
-
-let is_def (se:sigelt) =
-  match se.sigel with
-  | Sig_let _ -> true
-  | Sig_bundle _ -> true
-  | Sig_assume _ -> true
-  | Sig_declare_typ _ -> true
-  | _ -> false
-
-let is_simple_lemma (se:sigelt) =
-  match se.sigel with
-  | Sig_let { lbs=(false, [lb]); lids=[name] } ->
-    is_lemma_arrow lb.lbtyp &&
-    is_simple_definition lb.lbdef
-  | _ -> false
-
-let check_type (se:sigelt) (f:typ -> bool) =
-  match se.sigel with
-  | Sig_let { lbs=(_, lbs) } ->
-    BU.for_all (fun lb -> f lb.lbtyp) lbs
-  | Sig_declare_typ { t } -> f t
-  | _ -> false
-
-let is_sigelt_tot (se:sigelt) = check_type se is_tot_arrow
-let is_sigelt_ghost (se:sigelt) = check_type se is_gtot_arrow
-let is_sigelt_lemma (se:sigelt) = check_type se is_lemma_arrow
-
-let checked_file_content = list string & modul
-let checked_files : BU.smap checked_file_content = BU.smap_create 100
-let print_stderr f l = BU.fprint BU.stderr f l
-
-let read_checked_file (source_filename:string)
-  : option (string * checked_file_content)
-  = let checked_file =
-      if BU.ends_with source_filename ".checked"
-      then source_filename
-      (* TODO: check that we do not have an fst associated to this fsti. If we do have an fst, then we should ignore
-         the fsti! *)
-      else if BU.ends_with source_filename ".fst" || BU.ends_with source_filename ".fsti"
-      then source_filename ^ ".checked"
-      else source_filename ^ ".fst.checked"
+  let load_file_names () =
+    let fns =
+      List.collect
+        (fun inc -> List.map (fun fn -> String.lowercase fn, fn)
+                          (BU.readdir inc))
+        !includes
     in
-    print_stderr "Loading %s\n" [checked_file];
-    match find_file_in_path checked_file with
-    | None ->
-      print_stderr "Could not find %s\n" [checked_file];
-      None
-    | Some checked_file_path -> (
-      match FStar.CheckedFiles.unsafe_raw_load_checked_file checked_file_path with
+    fns
+
+  let map_file_name =
+    let files = BU.mk_ref None in
+    let find_file f files =
+      let fsti = f ^ ".fsti.checked" in
+      match List.assoc fsti files with
+      | None -> List.assoc #string #string (f ^ ".fst.checked") files
+      | Some f -> Some f
+    in
+    fun f ->
+      match !files with
       | None ->
-        print_stderr "Could not load %s\n" [checked_file_path];
+        let fns = load_file_names () in
+        files := Some fns;
+        find_file f fns
+      | Some fns ->
+        find_file f fns
+
+  let find_file_in_path f =
+    match List.tryFind (fun i -> BU.file_exists (BU.concat_dir_filename i f)) !includes with
+    | None -> None
+    | Some i -> Some (BU.concat_dir_filename i f)
+
+  let is_tot_arrow (t:typ) =
+      let _, comp = U.arrow_formals_comp_ln t in
+      U.is_total_comp comp
+
+  let is_gtot_arrow (t:typ) =
+      let _, comp = U.arrow_formals_comp_ln t in
+      not (U.is_total_comp comp) &&
+      U.is_tot_or_gtot_comp comp
+
+  let is_lemma_arrow (t:typ) =
+      let _, comp = U.arrow_formals_comp_ln t in
+      Ident.lid_equals (U.comp_effect_name comp)
+                       (FStar.Parser.Const.effect_Lemma_lid)
+
+  let is_simple_definition (t:term) : ML bool =
+    let t = U.unascribe t in
+    let _, body, _ = U.abs_formals_maybe_unascribe_body true t in
+    let rec aux body : ML bool =
+      let body = U.unascribe body in
+      match (SS.compress body).n with
+      | Tm_bvar _
+      | Tm_name _
+      | Tm_fvar _
+      | Tm_uinst _
+      | Tm_constant _
+      | Tm_type _
+      | Tm_arrow _
+      | Tm_refine _
+      | Tm_quoted _ -> true
+      | Tm_app { args } ->
+        List.for_all (fun (x, _) -> aux x) args
+      | Tm_let { lbs=(false, [lb]); body } ->
+        aux lb.lbdef && aux body
+      | Tm_meta { tm=t } ->
+        aux t
+      | _ -> false
+    in
+    match (SS.compress body).n with
+    | Tm_constant _ -> false //too simple
+    | _ -> aux body
+
+  let is_lemma (se:sigelt) =
+    match se.sigel with
+    | Sig_let { lbs=(_, lbs) } ->
+      List.for_all (fun lb -> is_lemma_arrow lb.lbtyp) lbs
+    | _ -> false
+
+  let is_def (se:sigelt) =
+    match se.sigel with
+    | Sig_let _ -> true
+    | Sig_bundle _ -> true
+    | Sig_assume _ -> true
+    | Sig_declare_typ _ -> true
+    | _ -> false
+
+  let is_simple_lemma (se:sigelt) =
+    match se.sigel with
+    | Sig_let { lbs=(false, [lb]); lids=[name] } ->
+      is_lemma_arrow lb.lbtyp &&
+      is_simple_definition lb.lbdef
+    | _ -> false
+
+  let check_type (se:sigelt) (f:typ -> bool) =
+    match se.sigel with
+    | Sig_let { lbs=(_, lbs) } ->
+      BU.for_all (fun lb -> f lb.lbtyp) lbs
+    | Sig_declare_typ { t } -> f t
+    | _ -> false
+
+  let is_sigelt_tot (se:sigelt) = check_type se is_tot_arrow
+  let is_sigelt_ghost (se:sigelt) = check_type se is_gtot_arrow
+  let is_sigelt_lemma (se:sigelt) = check_type se is_lemma_arrow
+
+  let checked_file_content = list string & modul
+  let checked_files : BU.smap checked_file_content = BU.smap_create 100
+  let source_file_lines = list string
+  let source_files : BU.smap source_file_lines = BU.smap_create 100
+  let print_stderr f l = BU.fprint BU.stderr f l
+
+
+  let read_checked_file (source_filename:string)
+    : option (string * checked_file_content)
+    = let checked_file =
+          if BU.ends_with source_filename ".checked"
+          then source_filename
+          (* TODO: check that we do not have an fst associated to this fsti. If we do have an fst, then we should ignore
+             the fsti! *)
+          else if BU.ends_with source_filename ".fst" || BU.ends_with source_filename ".fsti"
+          then source_filename ^ ".checked"
+          else source_filename ^ ".fst.checked"
+      in
+      print_stderr "Loading %s\n" [checked_file];
+      match find_file_in_path checked_file with
+      | None ->
+        print_stderr "Could not find %s\n" [checked_file];
         None
-      | Some (deps, tc_result) ->
-        BU.smap_add checked_files source_filename (deps, tc_result.checked_module);
-        Some (checked_file_path, (deps, tc_result.checked_module))
-    )
+      | Some checked_file_path -> (
+        match FStar.CheckedFiles.unsafe_raw_load_checked_file checked_file_path with
+        | None ->
+          print_stderr "Could not load %s\n" [checked_file_path];
+          None
+        | Some (deps, tc_result) ->
+          BU.smap_add checked_files source_filename (deps, tc_result.checked_module);
+          Some (checked_file_path, (deps, tc_result.checked_module))
+      )
+
+  let read_source_file (source_filename:string)
+    : option (string & source_file_lines)
+    = match find_file_in_path source_filename with 
+      | None ->
+        print_stderr "Could not find %s\n" [source_filename];
+        None
+      | Some full_path ->
+        match BU.smap_try_find source_files full_path with
+        | Some lines -> Some (full_path, lines)
+        | None -> 
+          let lines = BU.file_get_lines full_path in
+          BU.smap_add source_files full_path lines;
+          Some (full_path, lines)        
+
+
+  let range_start_end (r:Range.range)
+    : (int & int) & (int & int)
+    = let start_pos = Range.start_of_range r in
+      let end_pos = Range.end_of_range r in
+      (Range.line_of_pos start_pos, Range.col_of_pos start_pos),
+      (Range.line_of_pos end_pos, Range.col_of_pos end_pos)
+
+  let rec drop (n:int) (l:list 'a) : list 'a = 
+      if n <= 0 then l
+      else match l with
+           | [] -> []
+           | _::tl -> drop (n - 1) tl
+
+  let take (n:int) (l:list 'a) : list 'a = 
+    let rec aux (n:int) (l:list 'a) (out:list 'a) = 
+      if n <= 0 then List.rev out
+      else match l with 
+           | [] -> List.rev out
+           | hd::tl -> aux (n - 1) tl (hd::out)
+    in
+    aux n l []
+
+let max a b = if a < b then b else a
+
+let substring str start fin = 
+  let lstr = String.strlen str in
+  if start >= lstr then ""
+  else let len = min (max (fin - start) 0) (lstr - start) in
+       String.substring str start len
+
+
+  let read_source_file_range (r:Range.range) 
+    : option string
+    = match read_source_file (Range.file_of_range r) with
+      | None -> None
+      | Some (_, lines) ->
+        let (start_line, start_col), (end_line, end_col) = range_start_end r in
+      BU.print1 "Taking range %s\n" (Range.string_of_range r);
+      BU.print "lines are [%s]\n" [String.concat "; " lines];
+      let lines = drop (start_line - 1) lines in
+      BU.print "suffix lines are [%s]\n" [String.concat "; " lines];
+      let lines = take (end_line - start_line + 1) lines in
+      BU.print "cropped lines are [%s]\n" [String.concat "; " lines];
+      let lines = 
+          match lines with
+          | [] -> []
+          | [start_line] ->
+            [substring start_line start_col end_col]
+          | start_line::rest ->
+            let lines = substring start_line start_col (String.strlen start_line) :: rest in
+            let prefix, [last] = List.splitAt (List.length lines - 1) lines in
+            let last = substring last 0 end_col in
+            prefix @ [last]
+      in
+      BU.print "Final lines are [%s]\n" [String.concat "; " lines];      
+      Some (String.concat "\n" lines)
+      
 
 let load_dependences (cfc:checked_file_content)
   : list checked_file_content
@@ -237,6 +313,8 @@ type defs_and_premises = {
   proof_features: list string;
   source_range: Range.range;
   typ: string;
+  source_typ:string;
+  source_def:string
 }
 
 open FStar.Json
@@ -262,6 +340,8 @@ let defs_and_premises_as_json (l:defs_and_premises) =
               ("premises", JsonList (List.map JsonStr l.premises));
               ("proof_features", JsonList (List.map JsonStr l.proof_features));
               ("type", JsonStr l.typ);
+              ("source_type", JsonStr l.source_typ);
+              ("source_definition", JsonStr l.source_def);              
               ])
 
 
@@ -275,10 +355,17 @@ let heal_dummy_file_name (file_name : string) (r : Range.range) : Range.range
   Range.mk_range (if Range.file_of_range r = " dummy" then file_name else Range.file_of_range r)
          (Range.start_of_range r) (Range.end_of_range r)
 
+let extract_def_and_typ_from_source_lines rng =
+  let source_lines = read_source_file_range rng in
+  match source_lines with
+  | None -> "<UNK>", "<UNK>"
+  | Some lines -> lines, "<UNK>"
+    
 
 let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
   : list defs_and_premises
-  = match se.sigel with
+  = let source_def, source_typ = extract_def_and_typ_from_source_lines se.sigrng in
+    match se.sigel with
     | Sig_declare_typ data ->
         [{ source_range = heal_dummy_file_name file_name se.sigrng;
           name = Ident.string_of_lid data.lid;
@@ -289,6 +376,8 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
           eff_flags = []; (* if a declare typ does not have an assume qualified, then the def will show up *)
           mutual_with = [];
           proof_features = [] ;
+          source_typ;
+          source_def
         }]
     | Sig_assume data ->
         [{ source_range = heal_dummy_file_name file_name se.sigrng;
@@ -300,6 +389,8 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
           eff_flags = [];
           mutual_with = [];
           proof_features = [] ;
+          source_typ;
+          source_def          
         }]
     |  Sig_inductive_typ { params; t; lid; mutuals } ->
         let arr = FStar.Syntax.Util.arrow params (mk_Total t)
@@ -313,6 +404,8 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
           eff_flags = [];
           mutual_with = List.map Ident.string_of_lid mutuals;
           proof_features = [] ;
+          source_typ;
+          source_def          
         }]
     | Sig_bundle bundle -> List.collect (functions_called_by_user_in_def file_name) bundle.ses
     | Sig_datacon data ->
@@ -329,6 +422,8 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
           eff_flags = [];
           mutual_with = List.map Ident.string_of_lid data.mutuals ;
           proof_features = [] ;
+          source_typ;
+          source_def          
         }]
     | Sig_let { lbs=(is_rec, lbs) } ->
       let maybe_rec =
@@ -361,6 +456,8 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
           eff_flags = List.map P.cflag_to_string flags;
           mutual_with;
           proof_features = maybe_rec;
+          source_typ;
+          source_def          
         })
         lbs
     | _ -> []
@@ -559,6 +656,8 @@ let _ =
     "name": "int2bv_shl",
     "type": "...",
     "definition": "let int2bv_shl ...",
+    "source_type": "...",
+    "source_definition": "...",
     "premises": [
       "Prims.pos",
       "FStar.UInt.uint_t",
