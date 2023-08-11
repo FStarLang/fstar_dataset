@@ -39,7 +39,7 @@ class Globber:
     # name2jsonpath : Dict[str, pathlib.Path] = dict()
 
     # defn name -> def
-    name2defn : Dict[str, Dict[str, Any]] = dict()
+    # name2defn : Dict[str, Dict[str, Any]] = dict()
 
     def __init__(self):
         self.checked2imports = dict()
@@ -51,7 +51,7 @@ class Globber:
         self.name2checked_decl = dict()
         # self.name2source = dict()
         # self.name2jsonpath = dict()
-        self.name2defn = dict()
+        # self.name2defn = dict()
 
         self.checked2source = dict()
         self.checked2num_unk = dict()
@@ -168,16 +168,14 @@ class Globber:
                 if source_file_name.endswith("fsti"): #fsti can override fsts
                     if name in self.name2checked_decl:
                         overriding_fst = self.name2checked_decl[name].endswith(".fst.checked") # make sure that we are only overriding an fst definition.
-                        old_defn = self.name2defn[name]
-                        one_is_declaretyp = self.name2defn[name]["definition"] == "<DECLARETYP>" or defn["definition"] == "<DECLARETYP>"
-                        is_same = Globber._is_same_record(old_defn, defn)
-                        if not overriding_fst and not is_same and not one_is_declaretyp:
-                            self._raise_verification_error(old_defn, defn)
-                            logger.error(f"is_same: {is_same} | overriding_fst: {overriding_fst}")
-                            logger.error(old_defn["name"] == defn["name"])
-                            logger.error(old_defn["start_line"] == defn["start_line"])
-                            logger.error(old_defn["start_col"] == defn["start_col"])
-                            logger.error(old_defn["file_name"] == defn["file_name"])
+                        # TODO: Ask Nic why it is that we get duplicate defs that point to the same checked file.
+                        checked_file_eq = self.name2checked_decl[name] == self.source2checked[source_file_name] # either that, or we have the same checked file.
+                        if not overriding_fst and not checked_file_eq: # and not is_same:
+                            logger.error(f"overriding_fst: {overriding_fst}")
+                            logger.error(f"name: {name}")
+                            logger.error(f"old checked: {self.name2checked_defn[name]}")
+                            logger.error(f"new source file name: {source_file_name}")
+                            logger.error(f"new checked: {self.source2checked[source_file_name]}")
                             assert False
                     self.name2checked_decl[name] = self.source2checked[source_file_name]
                 elif name not in self.name2checked_decl: # only add stuff from fst once
@@ -187,35 +185,22 @@ class Globber:
                 # === handle source location of definitions (self2checked) ===
                 if source_file_name.endswith("fst"): #fst can override fsti
                     if name in self.name2checked_defn:
-                        overriding_fsti = self.name2checked_defn[name].endswith(".fst.checked") # make sure that we are only overriding an fst definition.
-                        old_defn = self.name2defn[name]
-                        one_is_declaretyp = self.name2defn[name]["definition"] == "<DECLARETYP>" or defn["definition"] == "<DECLARETYP>"
-                        one_is_assume = self.name2defn[name]["definition"] == "<ASSUME>" or defn["definition"] == "<ASSUME>"
-                        is_same = Globber._is_same_record(old_defn, defn)
-                        # I am overriding my own fsti, this is perectly kosher.
-                        # old_is_same_fsti = self.name2checked_defn[name] == 
-                        if not overriding_fsti and not is_same and not one_is_declaretyp and not one_is_assume and not old_is_same_fsti:
-                            self._raise_verification_error(old_defn, defn)
-                            logger.error(f"is_same: {is_same} | overriding_fsti: {overriding_fsti}")
-                            logger.error(old_defn["name"] == defn["name"])
-                            logger.error(old_defn["start_line"] == defn["start_line"])
-                            logger.error(old_defn["start_col"] == defn["start_col"])
-                            logger.error(old_defn["file_name"] == defn["file_name"])
+                        overriding_fsti = self.name2checked_defn[name].endswith(".fsti.checked") # make sure that we are only overriding an fst definition.
+                        checked_file_eq = self.name2checked_defn[name] == self.source2checked[source_file_name]
+                        if not overriding_fsti and not checked_file_eq: # and not is_same:
+                            logger.error(f"overriding_fsti: {overriding_fsti}")
+                            logger.error(f"name: {name}")
+                            logger.error(f"old checked: {self.name2checked_defn[name]}")
+                            logger.error(f"new source file name: {source_file_name}")
+                            logger.error(f"new checked: {self.source2checked[source_file_name]}")
                             assert False
                     self.name2checked_defn[name] = self.source2checked[source_file_name]
                 elif name not in self.name2checked_defn: # only add stuff from fsti once
                     assert source_file_name.endswith(".fsti")
                     self.name2checked_defn[name] = self.source2checked[source_file_name]
 
-                # === handle definition ===
-                if name not in self.name2defn: # adding a new definition
-                    self.name2defn[name] = defn
-                elif defn["definition"] == "<DECLARETYP>": # overriding a declaretyp definition
-                    self.name2defn[name] = defn # allowed
-
                 assert name in self.name2checked_defn
                 assert name in self.name2checked_decl
-                assert name in self.name2defn
 
         num_without_correct_edges = 0
         num_total = 0
