@@ -1,7 +1,10 @@
-.PHONY: find_all build build_raw_dataset build_raw_dataset_from_gzip
+.PHONY: find_all build build_raw_dataset build_raw_dataset_from_gzip upload
 
 zip:
 	tar -czv -f dataset.tar.gz ./dataset
+upload:
+	***REMOVED***
+	***REMOVED***
 
 find_all: build
 	mkdir -p dataset/
