@@ -126,7 +126,7 @@ def process_one_instance(entry, deps, config, fstar_process):
         return
     goal = entry["source_type"]
     if goal == "<UNK>" :
-        goal == ""
+        goal = ""
     solution = entry["source_definition"]
     full_soln= f"{scaffolding}\n{goal}\n{solution}"
     # print(f"full_soln={full_soln}")
