@@ -233,7 +233,8 @@ let substring str start fin =
 
   let read_source_file_range (r:Range.range) 
     : option string
-    = match read_source_file (Range.file_of_range r) with
+    = if Range.file_of_range r = " dummy" then None
+      else match read_source_file (Range.file_of_range r) with
       | None -> None
       | Some (_, lines) ->
         let (start_line, start_col), (end_line, end_col) = range_start_end r in
@@ -427,43 +428,90 @@ let extract_def_and_typ_from_source_lines rng =
     let parse_result = parse (Toplevel frag) in
     lines, Some parse_result
 
-let extract_typ_from_parse_result_of_let_binding parse_result_opt =
+let extract_typ_from_parse_result_of_let_binding lid parse_result_opt : option string =
   let open Parser in
   let open FStar.Parser.AST in
   match parse_result_opt with
-  | None -> "not parse result"
+  | None -> None //"not parse result"
   | Some pr -> (
     match pr with
     | ParseError(re, msg, r) ->
-      BU.format2 "Parse error: %s @ %s" msg (Range.string_of_range r)
-    | Term _ -> "unexpected term"
-    | IncrementalFragment _ -> "unexpected incremental fragment"
-    | ASTFragment (Inl file, _) -> "unexpected file result"
-    | ASTFragment (Inr (_::_::_), _) -> "unexpected multi decl"
+      None // BU.format2 "Parse error: %s @ %s" msg (Range.string_of_range r)
+    | Term _ -> None // "unexpected term"
+    | IncrementalFragment _ -> None //"unexpected incremental fragment"
+    | ASTFragment (Inl file, _) -> None //"unexpected file result"
+    | ASTFragment (Inr (_::_::_), _) -> None //"unexpected multi decl"
     | (ASTFragment (Inr [decl], _)) -> (
       match decl.d with
-      | TopLevelLet (b, decls) ->
-        let rewrite_decl (p, def) : list (pattern & term) =
-          let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
-          [p, wild]
-          // BU.print1 "Got definition: %s\n" (term_to_string def);
-          // match def.tm with
-          // | Ascribed (_, ty, t, b) ->
-          //   let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
-          //   [p, { def with tm = Ascribed (wild, ty, t, b)}]
-          // | _ ->
-          //   [p, def]
+      | TopLevelLet (b, decls) -> (
+        let rec spat (p:pattern) =
+          match p.pat with
+          | PatWild _ -> "PatWild"
+          | PatConst _ -> "PatConst"
+          | PatApp (p, pats) -> BU.format2 "PatApp (%s, [%s])" (spat p) (List.map spat pats |> String.concat "; ")
+          | PatVar (i, _, _) -> BU.format1 "(PatVar %s)" (Ident.string_of_id i)
+          | PatName l -> BU.format1 "(PatName %s)" (Ident.string_of_lid l)
+          | PatTvar (i, _, _) -> BU.format1 "(PatTVar %s)" (Ident.string_of_id i)
+          | PatList pats -> BU.format1 "(PatList [%s])"  (List.map spat pats |> String.concat "; ") 
+          | PatTuple (pats, _) -> BU.format1 "(PatTuple [%s])"  (List.map spat pats |> String.concat "; ") 
+          | PatRecord pats -> BU.format1 "(PatTuple [%s])"  (List.map (fun (l, p) -> BU.format2 "%s=%s" (Ident.string_of_lid l) (spat p)) pats  |> String.concat "; ")
+          | PatAscribed (p, _) -> BU.format1 "(PatAscribed %s)" (spat p)
+          | PatOr pats ->  BU.format1 "(PatOr [%s])"  (List.map spat pats |> String.concat "; ") 
+          | PatOp i -> BU.format1 "(PatOp %s)" (Ident.string_of_id i)
+          | PatVQuote _ -> "PatVQuote"
         in
-        let decls = List.collect rewrite_decl decls in
-        let decl = { decl with d = TopLevelLet (b, decls) } in
-        let doc = FStar.Parser.ToDocument.decl_to_document decl in
-        FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc
+        let rec name_of_pat_matches (p:pattern) =
+          match p.pat with
+          | PatAscribed (p, _) -> name_of_pat_matches p
+          | PatApp (p, _) -> name_of_pat_matches p
+          | PatName l -> Ident.lid_equals l lid
+          | PatVar (i, _, _) -> Ident.ident_equals i (Ident.ident_of_lid lid)
+          | _ -> false
+        in
+        let pdef = 
+          List.tryFind (fun (p, def) ->
+           name_of_pat_matches p)
+          decls
+        in
+        match pdef with
+        | None -> 
+          print_stderr "Could not find type of %s\n" [Ident.string_of_lid lid];
+          None
+        | Some (p, d) -> (
+          match p.pat with
+          | PatAscribed _ -> 
+            let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
+            let decl = { decl with d = TopLevelLet (NoLetQualifier, [p, wild]) } in
+            let doc = FStar.Parser.ToDocument.decl_to_document decl in
+            let str = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc in
+            let str =
+              if BU.ends_with str "= _"
+              then BU.substring str 0 (String.strlen str - 3)
+              else if BU.ends_with str "=\n _"
+              then BU.substring str 0 (String.strlen str - 4)
+              else if BU.ends_with str "=\n  _"
+              then BU.substring str 0 (String.strlen str - 5)
+              else str
+            in
+            let str = 
+              if BU.starts_with str "let rec"
+              then "val " ^ BU.substring_from str 7
+              else if BU.starts_with str "let"
+              then "val " ^ BU.substring_from str 4
+              else str
+            in
+            Some str
+          | _ ->
+            print_stderr "Could not find type of %s, %s is not an ascrption\n" [Ident.string_of_lid lid; FStar.Parser.AST.pat_to_string p];
+            None
+        )
+      )
       | _ ->
-        "not a top-level let"
+        None //"not a top-level let"
       )
     )
 
-  | _ -> "not an ast fragment"
+  | _ -> None //"not an ast fragment"
 
 let extract_opens_and_abbrevs (l:list (either open_module_or_namespace module_abbrev)) =
   List.map 
@@ -471,8 +519,24 @@ let extract_opens_and_abbrevs (l:list (either open_module_or_namespace module_ab
      | Inl (m, _) -> Inl (Ident.string_of_lid m)
      | Inr (m, n) -> Inr (Ident.string_of_id  m, Ident.string_of_lid n))
     l
-     
-let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
+
+let find_type_from_val_decl (l:Ident.lident) (decls:list sigelt)
+  : option string
+  = let d =
+        List.tryFind
+          (fun se ->
+            match se.sigel with
+            | Sig_declare_typ data -> Ident.lid_equals l data.lid
+            | _ -> false)
+          decls
+    in
+    match d with
+    | Some se ->
+      let source_def, _ = extract_def_and_typ_from_source_lines se.sigrng in
+      Some source_def
+    | _ -> None 
+  
+let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt) (se:sigelt)
   : list defs_and_premises
   = let source_def, parse_result_opt = extract_def_and_typ_from_source_lines se.sigrng in
     let source_typ = "<UNK>" in
@@ -526,7 +590,7 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
           opens_and_abbrevs;
           vconfig          
         }]
-    | Sig_bundle bundle -> List.collect (functions_called_by_user_in_def file_name) bundle.ses
+    | Sig_bundle bundle -> List.collect (functions_called_by_user_in_def file_name modul) bundle.ses
     | Sig_datacon data ->
         let _, comp = U.arrow_formals_comp data.t in
         let flags = U.comp_flags comp in
@@ -563,11 +627,20 @@ let rec functions_called_by_user_in_def (file_name : string) (se:sigelt)
         | Inl _ -> failwith "Unexpected lb name"
         | Inr fv -> Ident.string_of_lid fv.fv_name.v
       in
-      let source_typ = extract_typ_from_parse_result_of_let_binding parse_result_opt in
       List.map (fun lb ->
         let _, comp = U.arrow_formals_comp lb.lbtyp in
         let flags = U.comp_flags comp in
         let name = lbname_to_string lb.lbname in
+        let source_typ =
+          let Inr fv = lb.lbname in
+          let st_opt =
+            match find_type_from_val_decl (FStar.Syntax.Syntax.lid_of_fv fv) modul with
+            | None ->
+              extract_typ_from_parse_result_of_let_binding (FStar.Syntax.Syntax.lid_of_fv fv) parse_result_opt
+            | p -> p
+          in
+          BU.dflt source_typ st_opt
+        in
         { source_range = heal_dummy_file_name file_name lb.lbpos;
           name;
           typ = P.term_to_string lb.lbtyp;
@@ -598,7 +671,6 @@ let dependences_of_definition (source_file:string) (name:string)
     in
     let name = Ident.lid_of_str name in
     let module_deps = load_dependences cfc in
-    let {m} = cfc in
     let rec prefix_until_name out ses =
       match ses with
       | [] -> [], List.rev out
@@ -606,7 +678,8 @@ let dependences_of_definition (source_file:string) (name:string)
         match se.sigel with
         | Sig_let { lids = names } ->
           if BU.for_some (Ident.lid_equals name) names
-          then List.flatten (List.map (fun l -> l.premises) (functions_called_by_user_in_def source_file se)),
+          then List.collect (fun l -> l.premises) 
+                            (functions_called_by_user_in_def source_file cfc.m.declarations se),
                List.rev out //found it
           else prefix_until_name (se :: out) ses
         | _ ->
@@ -614,7 +687,7 @@ let dependences_of_definition (source_file:string) (name:string)
       )
     in
     let ses = List.collect (fun cfc -> cfc.m.declarations) module_deps in
-    let user_called_lemmas, local_deps = prefix_until_name [] m.declarations in
+    let user_called_lemmas, local_deps = prefix_until_name [] cfc.m.declarations in
     user_called_lemmas, local_deps @ ses
 
 let filter_sigelts (ses:list sigelt) =
@@ -644,7 +717,7 @@ let find_simple_lemmas (source_file:string) : list sigelt =
 let find_defs_and_premises (source_file:string)
   : list defs_and_premises =
   let sigelts = read_module_sigelts source_file in
-  List.collect (functions_called_by_user_in_def source_file) sigelts
+  List.collect (functions_called_by_user_in_def source_file sigelts) sigelts
 
 let simple_lemma_as_json
       (source_file:string)
