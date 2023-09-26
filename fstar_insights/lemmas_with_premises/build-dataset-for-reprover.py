@@ -98,12 +98,12 @@ class Dataset:
     def write_jsonl(self, records : List[Dict[str, Any]], path : Path):
         with open(path, "w") as f:
             for record in records:
-                json.dump(record, f)
+                json.dump(record, f, indent=1)
                 f.write("\n")
 
     def write_json(self, records : List[Dict[str, Any]], path : Path):
         with open(path, "w") as f:
-            json.dump(records, f)
+            json.dump(records, f, indent=1)
 
     def load_records(self, cutoff=None):
         """load all records from the dataset, keeping only 'cutoff' many records'"""
@@ -169,7 +169,7 @@ class Dataset:
             record["name"] = name
             record["file_name"] = "/home/bollu/dummy.fst"
             record["type"] = "Dummy"
-            record["definition"] = "DEFINITION"
+            record["definition"] = "def-(" + "-".join(random.choices(defnames, k=3)) + ")"
             record["start_line"] = "1"
             record["start_col"] = "42"
             record["premises"] = random.choices(defnames, k=random.randint(1, 4))
@@ -185,7 +185,7 @@ class Dataset:
         self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "test.json")        
         self.write_json(dataset[TRAIN_SPLIT_IX:TEST_SPLIT], OUT_FOLDER / "validate.json")        
         self.write_json(dataset, OUT_FOLDER / "corpus.json")        
-        self.write_json({"dummy": [] }, OUT_FOLDER / "file_import_graph.json")
+        self.write_json([ { "name": "dummy", "imports": [] }], OUT_FOLDER / "file_import_graph.json")
 
 
 
