@@ -127,10 +127,12 @@ def process_one_instance(entry, deps, config, fstar_process):
     goal = entry["source_type"]
     if goal == "<UNK>" :
         goal = ""
+    # NS: Here's where you should plug in a LLM-generated solution instead
     solution = entry["source_definition"]
     full_soln= f"{scaffolding}\n{goal}\n{solution}"
     # print(f"full_soln={full_soln}")
     result, detail = FH.check_solution(fstar_process, full_soln)
+    # the detail field contains the actual feedback, error report etc. from F* in case result==false
     logged_solution = { "name": lemma_long_name,
                         "goal_statement":goal,
                         "full_solution": full_soln,

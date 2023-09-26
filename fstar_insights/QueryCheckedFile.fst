@@ -187,9 +187,9 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
 
   let read_source_file (source_filename:string)
     : option (string & source_file_lines)
-    = match find_file_in_path source_filename with 
+    = match find_file_in_path (BU.basename source_filename) with 
       | None ->
-        print_stderr "Could not find %s\n" [source_filename];
+        print_stderr "Could not find %s\n" [BU.basename source_filename];
         None
       | Some full_path ->
         match BU.smap_try_find source_files full_path with
@@ -323,6 +323,8 @@ type defs_and_premises = {
   typ: string;
   source_typ:string;
   source_def:string;
+  prompt:string;
+  expected_response:string;
   opens_and_abbrevs:list (either string (string & string));
   vconfig: option VConfig.vconfig
 }
@@ -396,6 +398,8 @@ let defs_and_premises_as_json (l:defs_and_premises) =
               ("type", JsonStr l.typ);
               ("source_type", JsonStr l.source_typ);
               ("source_definition", JsonStr l.source_def);              
+              ("prompt", JsonStr l.prompt);
+              ("expected_response", JsonStr l.expected_response);
               ("opens_and_abbrevs", JsonList (List.map open_or_abbrev_as_json l.opens_and_abbrevs));
               ("vconfig", BU.dflt JsonNull (BU.map_opt l.vconfig vconfig_as_json))
               ])
@@ -428,7 +432,10 @@ let extract_def_and_typ_from_source_lines rng =
     let parse_result = parse (Toplevel frag) in
     lines, Some parse_result
 
-let extract_typ_from_parse_result_of_let_binding lid parse_result_opt : option string =
+let extract_from_parse_result_of_let_binding lid parse_result_opt 
+  : option (option string
+            & string
+            & string) =
   let open Parser in
   let open FStar.Parser.AST in
   match parse_result_opt with
@@ -441,9 +448,10 @@ let extract_typ_from_parse_result_of_let_binding lid parse_result_opt : option s
     | IncrementalFragment _ -> None //"unexpected incremental fragment"
     | ASTFragment (Inl file, _) -> None //"unexpected file result"
     | ASTFragment (Inr (_::_::_), _) -> None //"unexpected multi decl"
-    | (ASTFragment (Inr [decl], _)) -> (
+    | ASTFragment (Inr [], _) -> None //"unexpected empty decl"    
+    | ASTFragment (Inr [decl], _) -> (
       match decl.d with
-      | TopLevelLet (b, decls) -> (
+      | TopLevelLet (letqual, decls) -> (
         let rec spat (p:pattern) =
           match p.pat with
           | PatWild _ -> "PatWild"
@@ -478,13 +486,11 @@ let extract_typ_from_parse_result_of_let_binding lid parse_result_opt : option s
           print_stderr "Could not find type of %s\n" [Ident.string_of_lid lid];
           None
         | Some (p, d) -> (
-          match p.pat with
-          | PatAscribed _ -> 
-            let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
-            let decl = { decl with d = TopLevelLet (NoLetQualifier, [p, wild]) } in
-            let doc = FStar.Parser.ToDocument.decl_to_document decl in
-            let str = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc in
-            let str =
+          let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
+          let decl = { decl with d = TopLevelLet (letqual, [p, wild]) } in
+          let doc = FStar.Parser.ToDocument.decl_to_document decl in
+          let str = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc in
+          let str =
               if BU.ends_with str "= _"
               then BU.substring str 0 (String.strlen str - 3)
               else if BU.ends_with str "=\n _"
@@ -492,7 +498,12 @@ let extract_typ_from_parse_result_of_let_binding lid parse_result_opt : option s
               else if BU.ends_with str "=\n  _"
               then BU.substring str 0 (String.strlen str - 5)
               else str
-            in
+          in
+          let prompt = str in
+          let response = FStar.Parser.ToDocument.term_to_document d in
+          let response = "= " ^ FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 response in
+          match p.pat with
+          | PatAscribed _ -> 
             let str = 
               if BU.starts_with str "let rec"
               then "val " ^ BU.substring_from str 7
@@ -500,15 +511,15 @@ let extract_typ_from_parse_result_of_let_binding lid parse_result_opt : option s
               then "val " ^ BU.substring_from str 4
               else str
             in
-            Some str
+            Some (Some str, prompt, response)
           | _ ->
-            print_stderr "Could not find type of %s, %s is not an ascrption\n" [Ident.string_of_lid lid; FStar.Parser.AST.pat_to_string p];
-            None
+            Some (None, prompt, response)
         )
       )
       | _ ->
         None //"not a top-level let"
       )
+    | _ -> failwith "Unexpected parse result"
     )
 
   | _ -> None //"not an ast fragment"
@@ -540,6 +551,8 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
   : list defs_and_premises
   = let source_def, parse_result_opt = extract_def_and_typ_from_source_lines se.sigrng in
     let source_typ = "<UNK>" in
+    let prompt = "<UNK>" in
+    let expected_response = "<UNK>" in
     let opens_and_abbrevs = extract_opens_and_abbrevs se.sigopens_and_abbrevs in
     let vconfig = se.sigopts in
     match se.sigel with
@@ -555,6 +568,8 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           proof_features = [] ;
           source_typ;
           source_def;
+          prompt;
+          expected_response;
           opens_and_abbrevs;
           vconfig
         }]
@@ -570,6 +585,8 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           proof_features = [] ;
           source_typ;
           source_def;
+          prompt;
+          expected_response;
           opens_and_abbrevs;
           vconfig          
         }]
@@ -587,6 +604,8 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           proof_features = [] ;
           source_typ;
           source_def;
+          prompt;
+          expected_response;
           opens_and_abbrevs;
           vconfig          
         }]
@@ -607,6 +626,8 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           proof_features = [] ;
           source_typ;
           source_def;
+          prompt;
+          expected_response;
           opens_and_abbrevs;
           vconfig          
         }]
@@ -631,15 +652,24 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
         let _, comp = U.arrow_formals_comp lb.lbtyp in
         let flags = U.comp_flags comp in
         let name = lbname_to_string lb.lbname in
-        let source_typ =
+        let source_typ, prompt, expected_response =
           let Inr fv = lb.lbname in
+          let st_opt = extract_from_parse_result_of_let_binding (FStar.Syntax.Syntax.lid_of_fv fv) parse_result_opt in
           let st_opt =
             match find_type_from_val_decl (FStar.Syntax.Syntax.lid_of_fv fv) modul with
-            | None ->
-              extract_typ_from_parse_result_of_let_binding (FStar.Syntax.Syntax.lid_of_fv fv) parse_result_opt
-            | p -> p
+            | None -> (
+              match st_opt with
+              | None -> None
+              | Some (Some p, q, r) -> Some (p, q, r)
+              | Some (None, q, r) -> Some (source_typ, q, r)
+            )
+            | Some p ->
+              match st_opt with
+              | None -> Some (p, prompt, expected_response)
+              | Some (_, prompt, expected_response) ->
+                Some (p, p^"\n"^prompt, expected_response)
           in
-          BU.dflt source_typ st_opt
+          BU.dflt (source_typ, prompt, expected_response) st_opt
         in
         { source_range = heal_dummy_file_name file_name lb.lbpos;
           name;
@@ -653,6 +683,8 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           proof_features = maybe_rec;
           source_typ;
           source_def;
+          prompt;
+          expected_response;
           opens_and_abbrevs;
           vconfig          
         })
@@ -835,10 +867,9 @@ let main () =
 let _ =
   try
     FStar.Main.setup_hooks();
-    let _ = FStar.Options.set_options "--print_implicits" in
     main()
   with
-  | e when false ->
+  | e -> //when false ->
     print_stderr "Exception: %s\n" [BU.print_exn e];
     exit 1
 #pop-options
@@ -857,6 +888,8 @@ let _ =
     "definition": "let int2bv_shl ...",
     "source_type": "...",
     "source_definition": "...",
+    "prompt":"...",
+    "expected_response":"...",
     "premises": [
       "Prims.pos",
       "FStar.UInt.uint_t",
