@@ -172,7 +172,7 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
       print_stderr "Loading %s\n" [checked_file];
       match find_file_in_path checked_file with
       | None ->
-        print_stderr "Could not find %s\n" [checked_file];
+        print_stderr "Could not find checked file named %s\n" [checked_file];
         None
       | Some checked_file_path -> (
         match FStar.CheckedFiles.unsafe_raw_load_checked_file checked_file_path with
@@ -189,7 +189,7 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
     : option (string & source_file_lines)
     = match find_file_in_path (BU.basename source_filename) with 
       | None ->
-        print_stderr "Could not find %s\n" [BU.basename source_filename];
+        print_stderr "Could not find source file named %s\n" [BU.basename source_filename];
         None
       | Some full_path ->
         match BU.smap_try_find source_files full_path with
