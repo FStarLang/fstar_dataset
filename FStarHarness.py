@@ -3,6 +3,9 @@ import sys
 import subprocess
 import json
 
+# Note: Can we add an option to F* to only load a prefix of a given checked file?
+# we want to prevent a candidate proof from relying on out-of-scope parts of an F* checked file
+# notably the part including or following the definition/proof we're trying to synthesize
 def generate_harness_for_lemma(out_dir, harness_name, extension, scaffolding, needs_interface):
     # Write scaffoling to a file names Harness.module_name.fst
     file_name = harness_name + "." + extension
