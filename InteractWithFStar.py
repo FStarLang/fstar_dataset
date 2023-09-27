@@ -1,6 +1,5 @@
 import json
 import sys
-import subprocess
 import FStarHarness as FH
 
 # Read the json file
@@ -11,13 +10,9 @@ def read_json_file(filename):
     return data
 
 def build_file_scaffolding(deps):
-    file_name_ext = deps["source_file"].rsplit(".", 1)
-    module_name = file_name_ext[0]
-    extension = file_name_ext[1]
-    if extension == "fsti":
-        harness_name = "Harness_" + module_name.replace(".", "_") + "_i"
-    else:
-        harness_name = "Harness_" + module_name.replace(".", "_")
+    module_name, extension = deps["source_file"].rsplit(".", 1)
+    harness_name = f'Harness_{module_name.replace(".", "_")}'
+    if extension == "fsti": harness_name += '_i'
     extension = "fst"
     needs_interface = False
     scaffolding = "module " + harness_name + "\n"
@@ -171,19 +166,19 @@ def send_queries_to_fstar(json_data, config, out_dir, out_file):
         json.dump(outputs, f, indent=4)
 
 
-# if the number of command line arguments is not 2, print an error message and exit
-# the first argument is the name of the script
-# the second argument is the name of the input json file
-# the third argument is the name of the output directory
-# the fourth argument is the name of the output file
-if len(sys.argv) != 4:
-    print("Usage: python3 InteractWithFStar.py <json_file> <out dir> <out file>")
-    exit(1)
+if __name__ == '__main__':
+    # if the number of command line arguments is not 2, print an error message and exit
+    # the first argument is the name of the script
+    # the second argument is the name of the input json file
+    # the third argument is the name of the output directory
+    # the fourth argument is the name of the output file
+    if len(sys.argv) != 4:
+        print("Usage: python3 InteractWithFStar.py <json_file> <out dir> <out file>")
+        exit(1)
 
-# read the json file specified on the first command line argument
-json_data = read_json_file(sys.argv[1])
-config = read_json_file("interact_with_fstar.config.json")
-out_dir = sys.argv[2]
-out_file = sys.argv[3]
-send_queries_to_fstar(json_data, config, out_dir, out_file)
-
+    # read the json file specified on the first command line argument
+    json_data = read_json_file(sys.argv[1])
+    config = read_json_file("interact_with_fstar.config.json")
+    out_dir = sys.argv[2]
+    out_file = sys.argv[3]
+    send_queries_to_fstar(json_data, config, out_dir, out_file)

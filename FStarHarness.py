@@ -1,5 +1,3 @@
-
-import sys
 import subprocess
 import json
 
@@ -8,8 +6,7 @@ import json
 # notably the part including or following the definition/proof we're trying to synthesize
 def generate_harness_for_lemma(out_dir, harness_name, extension, scaffolding, needs_interface):
     # Write scaffoling to a file names Harness.module_name.fst
-    file_name = harness_name + "." + extension
-    file_name = out_dir + "/" + file_name
+    file_name = f'{out_dir}/{harness_name}.{extension}'
     with open(file_name, "w") as f:
         f.write(scaffolding)
     if needs_interface and extension == "fst":
@@ -23,9 +20,7 @@ def launch_fstar(out_dir, options, harness_name, extension, scaffolding, needs_i
     file_name = generate_harness_for_lemma(out_dir, harness_name, extension, scaffolding, needs_interface)
     # Launch F* in interactive mode
     # add --include x for each x in includes
-    fstar_args = ["fstar.exe", "--ide", file_name, "--report_assumes", "warn"]
-    for i in options:
-        fstar_args.append(i)
+    fstar_args = ["fstar.exe", "--ide", file_name, "--report_assumes", "warn"] + options
     print(f"Launching F* with args: {fstar_args}")
     fstar_process = subprocess.Popen(fstar_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     # check if the process launched without errors
@@ -85,9 +80,7 @@ def read_full_buffer_response(fstar_process):
     return json_objects
 
 def check_solution(fstar_process, solution):
-    code = json.dumps(solution)
-    request = f'{{"query-id":"2", "query": "full-buffer", "args":{{"kind": "full", "with-symbols":false, "code": {code}, "line":1, "column":0}}}}\n'
-    check_wf = json.loads(request)
+    check_wf = {"query-id":"2", "query": "full-buffer", "args":{"kind": "full", "with-symbols":False, "code": solution, "line":1, "column":0}}
     #print(f'Asking F* to check solution: {request}')
     fstar_process.stdin.write(json.dumps(check_wf))
     fstar_process.stdin.write("\n")
