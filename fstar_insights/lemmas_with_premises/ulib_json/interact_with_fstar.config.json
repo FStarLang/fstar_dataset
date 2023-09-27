@@ -5,5 +5,5 @@
     "output_token_limit": 512,
     "temperature": 0.8,
     "engine": "gpt-4",
-    "include": ["../../../../everest/FStar/ulib", "../../../../everest/FStar/ulib/.cache"]
+    "include": []
 }
