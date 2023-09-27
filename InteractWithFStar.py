@@ -48,7 +48,7 @@ def build_scaffolding(entry, deps):
     #translate vconfig to an option string
     # for each key/value pair in vconfig, add an element to an array of strings with the key and value
     options = []
-    for key, value in entry["vconfig"].items():
+    for key, value in (entry["vconfig"] or {}).items():
         match key:
             case "z3cliopt" | "z3smtopt":
                 # if value is the empty array, then skip it
