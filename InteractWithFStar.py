@@ -106,7 +106,7 @@ def build_scaffolding(entry, deps):
     #print (f"harness_name={harness_name}, extension={extension}, needs_interface={needs_interface}, scaffolding={scaffolding}, options={options}")
     return scaffolding
 
-def process_one_instance(entry, deps, config, fstar_process):
+def process_one_instance(entry, deps, fstar_process):
     if (entry["effect"] != "FStar.Pervasives.Lemma"):
         return
     #print("Attempting lemma " + entry["name"])
@@ -137,14 +137,9 @@ def process_one_instance(entry, deps, config, fstar_process):
     return logged_solution
 
 # for each entry in the json file, send the query to fstar insights
-def send_queries_to_fstar(json_data, config, out_dir, out_file):
+def send_queries_to_fstar(json_data, out_dir, out_file):
     outputs = []
-    include = []
-    for i in config["include"]:
-        include.append("--include")
-        include.append(i)
-    include.append("--include")
-    include.append(out_dir)
+    include = ["--include", out_dir]
     _module_name, harness_name, extension, needs_interface, static_scaffolding = build_file_scaffolding(json_data["dependencies"][0])
     fstar_process = FH.launch_fstar(out_dir,include, harness_name, extension, static_scaffolding, needs_interface)    
     out_file = out_dir + "/" + out_file
@@ -156,7 +151,7 @@ def send_queries_to_fstar(json_data, config, out_dir, out_file):
         # for each entry in the json file
         for entry in json_data["defs"]:
             # send the query to fstar insights
-            sol = process_one_instance(entry, deps, config, fstar_process)
+            sol = process_one_instance(entry, deps, fstar_process)
             if sol is not None:
                 outputs.append(sol)
         json.dump(outputs, f, indent=4)
@@ -174,7 +169,6 @@ if __name__ == '__main__':
 
     # read the json file specified on the first command line argument
     json_data = read_json_file(sys.argv[1])
-    config = read_json_file("interact_with_fstar.config.json")
     out_dir = sys.argv[2]
     out_file = sys.argv[3]
-    send_queries_to_fstar(json_data, config, out_dir, out_file)
+    send_queries_to_fstar(json_data, out_dir, out_file)
