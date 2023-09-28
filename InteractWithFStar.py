@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import json
 import sys
 import FStarHarness as FH
@@ -133,6 +134,7 @@ def process_one_instance(entry, deps, fstar_process):
         print(f"Lemma {lemma_long_name} verified")
     else:
         print(f"Lemma {lemma_long_name} failed")
+        print(full_soln)
     # append the logged solution to the json file as a json array
     return logged_solution
 

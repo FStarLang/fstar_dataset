@@ -215,3 +215,4 @@ FStar/
 !fstar_insights/lemmas_with_premises/makefile
 !fstar_insights/lemmas_with_premises/query_smt2_extractor.py
 
+/dataset
