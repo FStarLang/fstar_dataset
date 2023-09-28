@@ -7,11 +7,9 @@ all: $(addprefix out/, $(ALL_JSON_OUT_FILES))
 
 defs_and_premises: $(ALL_JSON_IN_FILES)
 
-out/%.json.out: %.json out
+out/%.json.out: %.json
+	mkdir -p out
 	python3 $(BM_HOME)/InteractWithFStar.py $< $(PWD)/out $<.out
 
 %.json: $(FSTAR_ULIB)/%
 	../../ocaml/bin/fstar_insights.exe --include $(FSTAR_ULIB)/.cache --include $(FSTAR_ULIB)  --all_defs_and_premises $(notdir $<) > $@
-
-out:
-	mkdir -p out
