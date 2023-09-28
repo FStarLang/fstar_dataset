@@ -49,11 +49,7 @@ def build_scaffolding(entry, deps):
                 # if value is the empty array, then skip it
                 if len(value) == 0:
                     continue
-                val = "\""
-                for v in value:
-                    val += str(v) + " "
-                val += "\""
-                value = val
+                value = "'" + ' '.join(str(v) for v in value) + "'"
             case "initial_fuel" | "max_fuel" | "initial_ifuel" | "max_ifuel" | "z3rlimit" | "z3rlimit_factor" | "z3seed":
                 value = str(value)
             case "z3refresh":
