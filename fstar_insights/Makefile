@@ -1,4 +1,5 @@
-all: exe
+.PHONY: all
+all: exe QueryCheckedFile.fst.config.json
 
 FSTAR_HOME ?= $(realpath $(dir $(shell which fstar.exe))/..)
 FSTAR_EXE = $(FSTAR_HOME)/bin/fstar.exe
@@ -30,3 +31,5 @@ $(OUTPUT_DIRECTORY)/%.ml: %.fst
                    --extract_module $(basename $(notdir $<))
 	chmod -x $@
 
+%.config.json: mkconfig.py
+	python mkconfig.py >$@
