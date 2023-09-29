@@ -11,7 +11,8 @@ os.makedirs('dataset', exist_ok=True)
 
 already_copied = {}
 for dirn in sys.argv[1:]:
-    fst_files = { basename(fn): fn for fn in glob.iglob(f'{dirn}/**/*.fst', recursive=True) }
+    fst_files = { basename(fn): fn for fn in glob.iglob(f'{dirn}/**/*.fst', recursive=True)
+                    if '/reclaimable/' not in fn }
     fsti_files = { basename(fn): fn for fn in glob.iglob(f'{dirn}/**/*.fsti', recursive=True) }
     checked_files = { stripext(basename(fn)): fn for fn in glob.iglob(f'{dirn}/**/*.checked', recursive=True, include_hidden=True) }
     for bn, cfn in checked_files.items():
