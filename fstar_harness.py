@@ -1,7 +1,75 @@
 #!/usr/bin/env python3
+from typing_extensions import TypedDict, Any, Optional, NotRequired
 import subprocess
 import json
 import sys
+
+class Dependency(TypedDict):
+  source_file: str
+  checked_file: str
+  dependencies: list[str]
+  depinfo: bool
+
+class OpenOrAbbrev(TypedDict):
+  open: NotRequired[str]
+  abbrev: NotRequired[bool]
+  key: NotRequired[str]
+  value: NotRequired[str]
+
+class Vconfig(TypedDict):
+  initial_fuel: int
+  max_fuel: int
+  initial_ifuel: int
+  max_ifuel: int
+  detail_errors: bool
+  detail_hint_replay: bool
+  no_smt: bool
+  quake_lo: int
+  quake_hi: int
+  quake_keep: bool
+  retry: bool
+  smtencoding_elim_box: bool
+  smtencoding_nl_arith_repr: str
+  smtencoding_l_arith_repr: str
+  smtencoding_valid_intro: bool
+  smtencoding_valid_elim: bool
+  tcnorm: bool
+  no_plugins: bool
+  no_tactics: bool
+  z3cliopt: list[str]
+  z3smtopt: list[Any]
+  z3refresh: bool
+  z3rlimit: int
+  z3rlimit_factor: int
+  z3seed: int
+  z3version: str
+  trivial_pre_for_unannotated_effectful_fns: bool
+  reuse_hint_for: Optional[Any]
+
+class Definition(TypedDict):
+  file_name: str
+  start_line: int
+  start_col: int
+  end_line: int
+  end_col: int
+  definition: str
+  effect: str
+  effect_flags: list[str]
+  mutual_with: list[Any]
+  name: str
+  premises: list[str]
+  proof_features: list[Any]
+  type: str
+  source_type: str
+  source_definition: str
+  prompt: str
+  expected_response: str
+  opens_and_abbrevs: list[OpenOrAbbrev]
+  vconfig: Optional[Vconfig]
+
+class InsightFile(TypedDict):
+  defs: list[Definition]
+  dependencies: list[Dependency]
 
 # Note: Can we add an option to F* to only load a prefix of a given checked file?
 # we want to prevent a candidate proof from relying on out-of-scope parts of an F* checked file
@@ -81,7 +149,7 @@ def read_full_buffer_response(fstar_process):
     # print ("Response from F*: " + response)
     return json_objects
 
-def check_solution(fstar_process, solution):
+def check_solution(fstar_process, solution: str):
     check_wf = {"query-id":"2", "query": "full-buffer", "args":{"kind": "full", "with-symbols":False, "code": solution, "line":1, "column":0}}
     #print(f'Asking F* to check solution: {request}')
     fstar_process.stdin.write(json.dumps(check_wf))
@@ -113,7 +181,7 @@ def build_file_scaffolding(deps):
     scaffolding += f"open {module_name}\n"    
     return (module_name, harness_name, extension, needs_interface, scaffolding)
     
-def build_scaffolding(entry, deps):
+def build_scaffolding(entry: Definition, deps: list[Dependency]):
     module_name, _harness_name, _extension, _needs_interface, scaffolding = build_file_scaffolding(deps)
 
     # add opens in reverse order
@@ -196,7 +264,7 @@ def build_scaffolding(entry, deps):
     #print (f"harness_name={harness_name}, extension={extension}, needs_interface={needs_interface}, scaffolding={scaffolding}, options={options}")
     return scaffolding
 
-def process_one_instance(entry, deps, fstar_process):
+def process_one_instance(entry: Definition, deps: list[Dependency], fstar_process):
     if (entry["effect"] != "FStar.Pervasives.Lemma"):
         return
     #print("Attempting lemma " + entry["name"])
@@ -259,7 +327,7 @@ if __name__ == '__main__':
         exit(1)
 
     # read the json file specified on the first command line argument
-    json_data = read_json_file(sys.argv[1])
+    json_data: InsightFile = read_json_file(sys.argv[1])
     out_dir = sys.argv[2]
     out_file = sys.argv[3]
     send_queries_to_fstar(json_data, out_dir, out_file)
