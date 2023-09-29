@@ -302,17 +302,14 @@ def send_queries_to_fstar(json_data, out_dir, out_file):
     _module_name, harness_name, extension, needs_interface, static_scaffolding = build_file_scaffolding(json_data["dependencies"][0])
     fstar_process = launch_fstar(out_dir,include, harness_name, extension, static_scaffolding, needs_interface)    
     out_file = out_dir + "/" + out_file
+    deps = json_data["dependencies"][0]
+    # for each entry in the json file
+    for entry in json_data["defs"]:
+        # send the query to fstar insights
+        sol = process_one_instance(entry, deps, fstar_process)
+        if sol is not None:
+            outputs.append(sol)
     with open(out_file, "w") as f:
-        deps = []
-        # if json_data has a "dependencies" field
-        if "dependencies" in json_data and len(json_data["dependencies"]) > 0:
-            deps = json_data["dependencies"][0]
-        # for each entry in the json file
-        for entry in json_data["defs"]:
-            # send the query to fstar insights
-            sol = process_one_instance(entry, deps, fstar_process)
-            if sol is not None:
-                outputs.append(sol)
         json.dump(outputs, f, indent=4)
 
 
