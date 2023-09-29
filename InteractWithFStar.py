@@ -141,7 +141,7 @@ def process_one_instance(entry, deps, fstar_process):
 # for each entry in the json file, send the query to fstar insights
 def send_queries_to_fstar(json_data, out_dir, out_file):
     outputs = []
-    include = ["--include", out_dir]
+    include = ["--include", 'dataset', '--include', out_dir] # TODO FIXME
     _module_name, harness_name, extension, needs_interface, static_scaffolding = build_file_scaffolding(json_data["dependencies"][0])
     fstar_process = FH.launch_fstar(out_dir,include, harness_name, extension, static_scaffolding, needs_interface)    
     out_file = out_dir + "/" + out_file
