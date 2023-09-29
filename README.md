@@ -25,5 +25,6 @@ explain where the files are stored and what info they contain
 After all that, you can run `make harness-check -j$(nproc)`
 as a sanity check to see if the harness can verify extracted proofs.
 
-This repo also provides `InteractWithFStar.py, which is a harness to run F*
-against sample proofs collected from the dataset
+This repo also provides `InteractWithFStar.py`, which is a harness to run F\*
+against sample proofs collected from the dataset.
+The script must be run from the `fstar_dataset/` directory.
