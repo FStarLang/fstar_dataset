@@ -12,7 +12,7 @@ To run:
 
  2. Make sure you have done `eval $(opam env)` and set the `FSTAR_HOME` environment variable.
 
- 3. `./ingest.py .../path/to/FStar`
+ 3. `./ingest.py .../path/to/FStar` (or `./ingest.py .../path/to/everest`)
 
  4. `make -C fstar_insights`
 
