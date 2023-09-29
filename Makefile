@@ -14,7 +14,7 @@ harness-check: $(ALL_JSON_OUT_FILES)
 
 harness-checked/%.json: dataset/%.json
 	mkdir -p harness-checked
-	./InteractWithFStar.py $< harness-checked $*.json
+	./fstar_harness.py $< harness-checked $*.json
 
 clean:
 	$(RM) -r dataset harness-checked
