@@ -9,12 +9,17 @@ basename = os.path.basename
 
 os.makedirs('dataset', exist_ok=True)
 
+def myglob(pat: str):
+    for fn in glob.iglob(pat, recursive=True, include_hidden=True):
+        if '/reclaimable/' in fn: continue
+        if '/examples/' in fn: continue
+        yield fn
+
 already_copied = {}
 for dirn in sys.argv[1:]:
-    fst_files = { basename(fn): fn for fn in glob.iglob(f'{dirn}/**/*.fst', recursive=True)
-                    if '/reclaimable/' not in fn }
-    fsti_files = { basename(fn): fn for fn in glob.iglob(f'{dirn}/**/*.fsti', recursive=True) }
-    checked_files = { stripext(basename(fn)): fn for fn in glob.iglob(f'{dirn}/**/*.checked', recursive=True, include_hidden=True) }
+    fst_files = { basename(fn): fn for fn in myglob(f'{dirn}/**/*.fst') }
+    fsti_files = { basename(fn): fn for fn in myglob(f'{dirn}/**/*.fsti') }
+    checked_files = { stripext(basename(fn)): fn for fn in myglob(f'{dirn}/**/*.checked') }
     for bn, cfn in checked_files.items():
         if bn in already_copied:
             print(f'{cfn} already seen before: {already_copied[bn]}')
