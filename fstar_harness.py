@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-from typing_extensions import TypedDict, Any, Optional, NotRequired
+from typing import TypedDict, Any, Optional, NotRequired
 import subprocess
 import json
 import sys
+import tempfile
 
 class Dependency(TypedDict):
   source_file: str
@@ -71,6 +72,10 @@ class InsightFile(TypedDict):
   defs: list[Definition]
   dependencies: list[Dependency]
 
+def eprint(msg):
+    sys.stderr.write(msg + '\n')
+    sys.stderr.flush()
+
 # Note: Can we add an option to F* to only load a prefix of a given checked file?
 # we want to prevent a candidate proof from relying on out-of-scope parts of an F* checked file
 # notably the part including or following the definition/proof we're trying to synthesize
@@ -90,12 +95,12 @@ def launch_fstar(out_dir, options, harness_name, extension, scaffolding, needs_i
     file_name = generate_harness_for_lemma(out_dir, harness_name, extension, scaffolding, needs_interface)
     # Launch F* in interactive mode
     # add --include x for each x in includes
-    fstar_args = ["fstar.exe", "--ide", file_name, "--report_assumes", "warn"] + options
-    print(f"Launching F* with args: {fstar_args}")
+    fstar_args = ["fstar.exe", "--ide", file_name, "--report_assumes", "warn", '--include', out_dir] + options
+    eprint(f"Launching F* with args: {fstar_args}")
     fstar_process = subprocess.Popen(fstar_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     # check if the process launched without errors
     if fstar_process.poll() is not None:
-        print("F* process terminated")
+        eprint("F* process terminated")
         return None
     return fstar_process
 
@@ -114,11 +119,11 @@ def validate_fstar_response(json_objects):
             continue
         if resp["kind"] == "response":
             if resp["status"] != "success":
-                print(f"F* reports error: {resp}")
+                eprint(f"F* reports error: {resp}")
                 return (False, resp)
             else:
                 continue
-        print(f"Error: {resp}")
+        eprint(f"Error: {resp}")
         return (False, resp)
     return (True, [])
 
@@ -130,14 +135,14 @@ def read_full_buffer_response(fstar_process):
     json_objects = []
     while True:
         if fstar_process.poll() is not None:
-            print("F* process terminated while reading output")
+            eprint("F* process terminated while reading output")
             # print the full contents of stderr
             for line in fstar_process.stderr.readlines():
-                print(f"Error: {line}")
+                eprint(f"Error: {line}")
             break
         line = fstar_process.stdout.readline()
         # print a line to stderr for debugging
-        # print("Line from F*: <" + line +">", file=sys.stderr)
+        # eprint("Line from F*: <" + line +">", file=sys.stderr)
         if line == "":
             continue
         response = response + line
@@ -151,7 +156,7 @@ def read_full_buffer_response(fstar_process):
 
 def check_solution(fstar_process, solution: str):
     check_wf = {"query-id":"2", "query": "full-buffer", "args":{"kind": "full", "with-symbols":False, "code": solution, "line":1, "column":0}}
-    #print(f'Asking F* to check solution: {request}')
+    #eprint(f'Asking F* to check solution: {request}')
     fstar_process.stdin.write(json.dumps(check_wf))
     fstar_process.stdin.write("\n")
     fstar_process.stdin.flush()
@@ -267,7 +272,7 @@ def build_scaffolding(entry: Definition, deps: list[Dependency]):
 def process_one_instance(entry: Definition, deps: list[Dependency], fstar_process):
     if (entry["effect"] != "FStar.Pervasives.Lemma"):
         return
-    #print("Attempting lemma " + entry["name"])
+    #eprint("Attempting lemma " + entry["name"])
     scaffolding = build_scaffolding(entry, deps)
     lemma_long_name = entry["name"]
     lemma_name = lemma_long_name.split(".")[-1]
@@ -279,7 +284,7 @@ def process_one_instance(entry: Definition, deps: list[Dependency], fstar_proces
     # NS: Here's where you should plug in a LLM-generated solution instead
     solution = entry["source_definition"]
     full_soln= f"{scaffolding}\n{goal}\n{solution}"
-    # print(f"full_soln={full_soln}")
+    # eprint(f"full_soln={full_soln}")
     result, detail = check_solution(fstar_process, full_soln)
     # the detail field contains the actual feedback, error report etc. from F* in case result==false
     logged_solution = { "name": lemma_long_name,
@@ -288,43 +293,36 @@ def process_one_instance(entry: Definition, deps: list[Dependency], fstar_proces
                         "result": result,
                         "detail": detail }
     if result :
-        print(f"Lemma {lemma_long_name} verified")
+        eprint(f"Lemma {lemma_long_name} verified")
     else:
-        print(f"Lemma {lemma_long_name} failed")
-        print(full_soln)
+        eprint(f"Lemma {lemma_long_name} failed")
+        eprint(full_soln)
     # append the logged solution to the json file as a json array
     return logged_solution
 
 # for each entry in the json file, send the query to fstar insights
-def send_queries_to_fstar(json_data, out_dir, out_file):
-    outputs = []
-    include = ["--include", 'dataset', '--include', out_dir] # TODO FIXME
-    _module_name, harness_name, extension, needs_interface, static_scaffolding = build_file_scaffolding(json_data["dependencies"][0])
-    fstar_process = launch_fstar(out_dir,include, harness_name, extension, static_scaffolding, needs_interface)    
-    out_file = out_dir + "/" + out_file
-    deps = json_data["dependencies"][0]
-    # for each entry in the json file
-    for entry in json_data["defs"]:
-        # send the query to fstar insights
-        sol = process_one_instance(entry, deps, fstar_process)
-        if sol is not None:
-            outputs.append(sol)
-    with open(out_file, "w") as f:
-        json.dump(outputs, f, indent=4)
+def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
+    with tempfile.TemporaryDirectory() as out_dir:
+        outputs = []
+        include = []
+        deps = json_data["dependencies"][0]
+        _module_name, harness_name, extension, needs_interface, static_scaffolding = build_file_scaffolding(deps)
+        fstar_process = launch_fstar(out_dir, include, harness_name, extension, static_scaffolding, needs_interface)
+        # for each entry in the json file
+        for entry in json_data["defs"]:
+            # send the query to fstar insights
+            sol = process_one_instance(entry, deps, fstar_process)
+            if sol is not None:
+                outputs.append(sol)
+        return outputs
 
 
 if __name__ == '__main__':
-    # if the number of command line arguments is not 2, print an error message and exit
-    # the first argument is the name of the script
-    # the second argument is the name of the input json file
-    # the third argument is the name of the output directory
-    # the fourth argument is the name of the output file
-    if len(sys.argv) != 4:
-        print("Usage: python3 InteractWithFStar.py <json_file> <out dir> <out file>")
+    if len(sys.argv) != 2:
+        sys.stderr.write('Usage: python3 InteractWithFStar.py dir/dataset < Input.File.json\n')
         exit(1)
+    dataset_dir = sys.argv[1]
 
     # read the json file specified on the first command line argument
-    json_data: InsightFile = read_json_file(sys.argv[1])
-    out_dir = sys.argv[2]
-    out_file = sys.argv[3]
-    send_queries_to_fstar(json_data, out_dir, out_file)
+    json_data: InsightFile = json.load(sys.stdin)
+    json.dump(send_queries_to_fstar(json_data, dataset_dir), sys.stdout)
