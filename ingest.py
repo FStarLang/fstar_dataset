@@ -13,6 +13,7 @@ def myglob(pat: str):
     for fn in glob.iglob(pat, recursive=True, include_hidden=True):
         if '/reclaimable/' in fn: continue
         if '/examples/' in fn: continue
+        if '/.scripts/' in fn: continue
         yield fn
 
 already_copied = {}
