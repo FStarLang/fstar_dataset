@@ -169,7 +169,7 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
           then source_filename ^ ".checked"
           else source_filename ^ ".fst.checked"
       in
-      print_stderr "Loading %s\n" [checked_file];
+      // print_stderr "Loading %s\n" [checked_file];
       match find_file_in_path checked_file with
       | None ->
         print_stderr "Could not find checked file named %s\n" [checked_file];
@@ -432,12 +432,14 @@ let extract_def_and_typ_from_source_lines rng =
     let parse_result = parse (Toplevel frag) in
     lines, Some parse_result
 
-let rec spat (p: FStar.Parser.AST.pattern) =
-  let open FStar.Parser.AST in
+module AST = FStar.Parser.AST
+
+let rec spat (p: AST.pattern) =
+  let open AST in
   match p.pat with
   | PatWild _ -> "PatWild"
   | PatConst _ -> "PatConst"
-  | PatApp (p, pats) -> BU.format2 "PatApp (%s, [%s])" (spat p) (List.map spat pats |> String.concat "; ")
+  | PatApp (p, pats) -> BU.format2 "(PatApp (%s, [%s]))" (spat p) (List.map spat pats |> String.concat "; ")
   | PatVar (i, _, _) -> BU.format1 "(PatVar %s)" (Ident.string_of_id i)
   | PatName l -> BU.format1 "(PatName %s)" (Ident.string_of_lid l)
   | PatTvar (i, _, _) -> BU.format1 "(PatTVar %s)" (Ident.string_of_id i)
@@ -448,6 +450,43 @@ let rec spat (p: FStar.Parser.AST.pattern) =
   | PatOr pats ->  BU.format1 "(PatOr [%s])"  (List.map spat pats |> String.concat "; ")
   | PatOp i -> BU.format1 "(PatOp %s)" (Ident.string_of_id i)
   | PatVQuote _ -> "PatVQuote"
+
+let mk_arrow (b: AST.binder') (q: option AST.arg_qualifier) (attr: list AST.term) (body: AST.term) : AST.term =
+  let open AST in
+  { body with tm = AST.Product ([{ b = b; brange = body.range; blevel = body.level; aqual = q; battributes = attr }], body) }
+
+let rec val_of_ascribed_pat (p: AST.pattern) (t: AST.term) : option (Ident.ident * AST.term) =
+  let open AST in
+  match p.pat with
+  | PatVar (id, _, _) -> Some (id, t)
+  | PatApp (p, args) -> val_of_pat_app p (List.rev args) t
+  | _ -> None
+and val_of_pat_app (p: AST.pattern) (args: list AST.pattern) (t: AST.term) : option (Ident.ident * AST.term) =
+  let open AST in
+  match args with
+  | [] -> val_of_ascribed_pat p t
+  | a::args -> match a.pat with
+    | PatTuple ([], _) | PatConst Const.Const_unit ->
+      val_of_pat_app p args (mk_arrow (NoName { t with tm = Var Parser.Const.unit_lid }) None [] t)
+    | PatAscribed ({ pat = PatWild (q, attr) }, (s, _)) ->
+      val_of_pat_app p args (mk_arrow (NoName s) q attr t)
+    | PatAscribed ({ pat = PatVar (x, q, attr) }, (s, _)) ->
+      val_of_pat_app p args (mk_arrow (Annotated (x, s)) q attr t)
+    | PatTvar (x, q, attr) ->
+      val_of_pat_app p args (mk_arrow (TVariable x) q attr t)
+    | PatVar (x, q, attr) ->
+      // FIXME: this produces `val foo (#a: _) ..` instead of `val foo #a`
+      let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
+      val_of_pat_app p args (mk_arrow (Annotated (x, wild)) q attr t)
+    | _ -> None
+
+let val_of_let (p: AST.pattern) : option (Ident.ident * AST.term) =
+  let open AST in
+  match p.pat with
+  | PatAscribed (p, (t, _)) -> val_of_ascribed_pat p t
+  | _ -> None
+    // let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
+    // val_of_ascribed_pat p wild
 
 let extract_from_parse_result_of_let_binding lid parse_result_opt 
   : option (option string
@@ -488,29 +527,21 @@ let extract_from_parse_result_of_let_binding lid parse_result_opt
           None
         | Some (p, d) -> (
           let wild = mk_term Wild FStar.Compiler.Range.dummyRange Un in
-          let decl = { decl with d = TopLevelLet (letqual, [p, wild]) } in
-          let doc = FStar.Parser.ToDocument.decl_to_document decl in
-          let str = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc in
-          let str = if BU.ends_with str "_" then BU.substring str 0 (String.strlen str - 1) else str in
-          let prompt = str in
+          let prompt =
+            let decl = { decl with d = TopLevelLet (letqual, [p, wild]) } in
+            let doc = FStar.Parser.ToDocument.decl_to_document decl in
+            let str = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc in
+            let str = if BU.ends_with str "_" then BU.substring str 0 (String.strlen str - 1) else str in
+            BU.trim_string str ^ "\n  " in
           let response = FStar.Parser.ToDocument.term_to_document d in
           let response = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 response in
-          match p.pat with
-          | PatAscribed _ -> 
-            let str =
-              if BU.ends_with str " = " then BU.substring str 0 (String.strlen str - 3) else
-              if BU.ends_with str " =\n " then BU.substring str 0 (String.strlen str - 4) else
-              if BU.ends_with str " =\n  " then BU.substring str 0 (String.strlen str - 5) else
-              str in
-            let str = 
-              if BU.starts_with str "let rec"
-              then "val " ^ BU.substring_from str 7
-              else if BU.starts_with str "let"
-              then "val " ^ BU.substring_from str 4
-              else str
-            in
+          match val_of_let p with
+          | Some val_decl ->
+            let doc = FStar.Parser.ToDocument.decl_to_document { decl with d = Val val_decl } in
+            let str = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc in
             Some (Some str, prompt, response)
-          | _ ->
+          | None ->
+            (match p.pat with | AST.PatAscribed _ -> print_stderr "Could not convert pattern to val: %s %s\n" [AST.pat_to_string p; spat p] | _ -> ());
             Some (None, prompt, response)
         )
       )
