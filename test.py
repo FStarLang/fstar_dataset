@@ -4,10 +4,12 @@ import fstar_harness
 import sys
 
 tests = [
-    ('FStar.OrdSet.eq_lemma', '()', False),
-    ('FStar.OrdSet.eq_lemma', 'FStar.OrdSet.eq_lemma s1 s2', False),
-    # ('FStar.Seq.Base.init_aux', "init_aux'", True),
-    ('FStar.Sequence.Base.length_of_empty_is_zero_lemma', '()', True),
+    ('FStar.OrdSet.eq_lemma', '()', False), # SMT pattern for eq_lemma
+    ('FStar.OrdSet.eq_lemma', 'FStar.OrdSet.eq_lemma s1 s2', False), # referencing lemma itself
+    # ('FStar.Seq.Base.init_aux', "init_aux'", True), # private definition
+    ('FStar.Seq.Base.append_assoc', '()', False),
+    ('FStar.Seq.Base.append_assoc', 'assume false; ()', False), # reject assumes
+    ('FStar.Sequence.Base.length_of_empty_is_zero_lemma', '()', True), # support private names
 ]
 
 results = []
