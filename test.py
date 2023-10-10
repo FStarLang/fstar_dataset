@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import json
 import fstar_harness
+import sys
 
 tests = [
     ('FStar.OrdSet.eq_lemma', '()', False),
+    ('FStar.OrdSet.eq_lemma', 'FStar.OrdSet.eq_lemma s1 s2', False),
     # ('FStar.Seq.Base.init_aux', "init_aux'", True),
     ('FStar.Sequence.Base.length_of_empty_is_zero_lemma', '()', True),
 ]
@@ -25,3 +27,9 @@ for lid, prf, should_check in tests:
     else:
         kind = 'FALSE ' + ('POSITIVE' if passed else 'NEGATIVE')
         print(f'NOT OK {lid} = {prf} ({kind})')
+
+false_positives = len([() for actual, (_, _, expected) in zip(results, tests) if actual and not expected])
+false_negatives = len([() for actual, (_, _, expected) in zip(results, tests) if not actual and expected])
+if false_positives > 0 or false_negatives > 0:
+    print(f'{false_positives} false positives, {false_negatives} false negatives')
+    sys.exit(1)
