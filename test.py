@@ -16,8 +16,7 @@ for lid, prf, should_check in tests:
     f: fstar_harness.InsightFile = json.load(open(f'dataset/{mod_name}.fst.json'))
     defn, = (defn for defn in f['defs'] if defn['name'] == lid and defn['definition'] != '<DECLARETYP>')
     prompt = defn['prompt']
-    prompt = prompt[prompt.find('\nlet')+1:] # TODO!?!
-    defn['source_definition'] = f'{prompt} = {prf}'
+    defn['source_definition'] = prompt + prf
     f['defs'] = [defn]
     outputs = fstar_harness.send_queries_to_fstar(f, 'dataset')
     passed = outputs[0]['result']

@@ -432,6 +432,23 @@ let extract_def_and_typ_from_source_lines rng =
     let parse_result = parse (Toplevel frag) in
     lines, Some parse_result
 
+let rec spat (p: FStar.Parser.AST.pattern) =
+  let open FStar.Parser.AST in
+  match p.pat with
+  | PatWild _ -> "PatWild"
+  | PatConst _ -> "PatConst"
+  | PatApp (p, pats) -> BU.format2 "PatApp (%s, [%s])" (spat p) (List.map spat pats |> String.concat "; ")
+  | PatVar (i, _, _) -> BU.format1 "(PatVar %s)" (Ident.string_of_id i)
+  | PatName l -> BU.format1 "(PatName %s)" (Ident.string_of_lid l)
+  | PatTvar (i, _, _) -> BU.format1 "(PatTVar %s)" (Ident.string_of_id i)
+  | PatList pats -> BU.format1 "(PatList [%s])"  (List.map spat pats |> String.concat "; ")
+  | PatTuple (pats, _) -> BU.format1 "(PatTuple [%s])"  (List.map spat pats |> String.concat "; ")
+  | PatRecord pats -> BU.format1 "(PatTuple [%s])"  (List.map (fun (l, p) -> BU.format2 "%s=%s" (Ident.string_of_lid l) (spat p)) pats  |> String.concat "; ")
+  | PatAscribed (p, _) -> BU.format1 "(PatAscribed %s)" (spat p)
+  | PatOr pats ->  BU.format1 "(PatOr [%s])"  (List.map spat pats |> String.concat "; ")
+  | PatOp i -> BU.format1 "(PatOp %s)" (Ident.string_of_id i)
+  | PatVQuote _ -> "PatVQuote"
+
 let extract_from_parse_result_of_let_binding lid parse_result_opt 
   : option (option string
             & string
@@ -452,22 +469,6 @@ let extract_from_parse_result_of_let_binding lid parse_result_opt
     | ASTFragment (Inr [decl], _) -> (
       match decl.d with
       | TopLevelLet (letqual, decls) -> (
-        let rec spat (p:pattern) =
-          match p.pat with
-          | PatWild _ -> "PatWild"
-          | PatConst _ -> "PatConst"
-          | PatApp (p, pats) -> BU.format2 "PatApp (%s, [%s])" (spat p) (List.map spat pats |> String.concat "; ")
-          | PatVar (i, _, _) -> BU.format1 "(PatVar %s)" (Ident.string_of_id i)
-          | PatName l -> BU.format1 "(PatName %s)" (Ident.string_of_lid l)
-          | PatTvar (i, _, _) -> BU.format1 "(PatTVar %s)" (Ident.string_of_id i)
-          | PatList pats -> BU.format1 "(PatList [%s])"  (List.map spat pats |> String.concat "; ") 
-          | PatTuple (pats, _) -> BU.format1 "(PatTuple [%s])"  (List.map spat pats |> String.concat "; ") 
-          | PatRecord pats -> BU.format1 "(PatTuple [%s])"  (List.map (fun (l, p) -> BU.format2 "%s=%s" (Ident.string_of_lid l) (spat p)) pats  |> String.concat "; ")
-          | PatAscribed (p, _) -> BU.format1 "(PatAscribed %s)" (spat p)
-          | PatOr pats ->  BU.format1 "(PatOr [%s])"  (List.map spat pats |> String.concat "; ") 
-          | PatOp i -> BU.format1 "(PatOp %s)" (Ident.string_of_id i)
-          | PatVQuote _ -> "PatVQuote"
-        in
         let rec name_of_pat_matches (p:pattern) =
           match p.pat with
           | PatAscribed (p, _) -> name_of_pat_matches p
@@ -490,20 +491,17 @@ let extract_from_parse_result_of_let_binding lid parse_result_opt
           let decl = { decl with d = TopLevelLet (letqual, [p, wild]) } in
           let doc = FStar.Parser.ToDocument.decl_to_document decl in
           let str = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 doc in
-          let str =
-              if BU.ends_with str "= _"
-              then BU.substring str 0 (String.strlen str - 3)
-              else if BU.ends_with str "=\n _"
-              then BU.substring str 0 (String.strlen str - 4)
-              else if BU.ends_with str "=\n  _"
-              then BU.substring str 0 (String.strlen str - 5)
-              else str
-          in
+          let str = if BU.ends_with str "_" then BU.substring str 0 (String.strlen str - 1) else str in
           let prompt = str in
           let response = FStar.Parser.ToDocument.term_to_document d in
-          let response = "= " ^ FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 response in
+          let response = FStar.Pprint.pretty_string (BU.float_of_string "1.0") 100 response in
           match p.pat with
           | PatAscribed _ -> 
+            let str =
+              if BU.ends_with str " = " then BU.substring str 0 (String.strlen str - 3) else
+              if BU.ends_with str " =\n " then BU.substring str 0 (String.strlen str - 4) else
+              if BU.ends_with str " =\n  " then BU.substring str 0 (String.strlen str - 5) else
+              str in
             let str = 
               if BU.starts_with str "let rec"
               then "val " ^ BU.substring_from str 7
@@ -667,7 +665,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
               match st_opt with
               | None -> Some (p, prompt, expected_response)
               | Some (_, prompt, expected_response) ->
-                Some (p, p^"\n"^prompt, expected_response)
+                Some (p, prompt, expected_response)
           in
           BU.dflt (source_typ, prompt, expected_response) st_opt
         in
