@@ -270,14 +270,9 @@ def build_scaffolding(entry: Definition, deps: list[Dependency]):
     return scaffolding
 
 def process_one_instance(entry: Definition, deps: list[Dependency], fstar_process):
-    if (entry["effect"] != "FStar.Pervasives.Lemma"):
-        return
     #eprint("Attempting lemma " + entry["name"])
     scaffolding = build_scaffolding(entry, deps)
     lemma_long_name = entry["name"]
-    lemma_name = lemma_long_name.split(".")[-1]
-    if (lemma_name.startswith("__proj__")):
-        return
     goal = entry["source_type"]
     if goal == "<UNK>" :
         goal = ""
@@ -300,6 +295,16 @@ def process_one_instance(entry: Definition, deps: list[Dependency], fstar_proces
     # append the logged solution to the json file as a json array
     return logged_solution
 
+def should_ignore(entry: Definition) -> Optional[str]:
+    if entry['definition'].startswith('<'):
+        return 'nondefinition'
+    if '=' not in entry['source_definition']:
+        # QueryCheckedFile messages up `type =` declarations.
+        return 'nondefinition (type)'
+    if entry['file_name'] == 'dummy':
+        return 'unreal lemma'
+    return None
+
 # for each entry in the json file, send the query to fstar insights
 def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
     with tempfile.TemporaryDirectory() as out_dir:
@@ -310,10 +315,12 @@ def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
         fstar_process = launch_fstar(out_dir, include, harness_name, extension, static_scaffolding, needs_interface)
         # for each entry in the json file
         for entry in json_data["defs"]:
+            if reason := should_ignore(entry):
+                eprint(f'Ignoring {entry["name"]}: {reason}')
+                continue
             # send the query to fstar insights
-            sol = process_one_instance(entry, deps, fstar_process)
-            if sol is not None:
-                outputs.append(sol)
+            out = process_one_instance(entry, deps, fstar_process)
+            outputs.append(out)
         return outputs
 
 
