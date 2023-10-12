@@ -14,6 +14,7 @@ def myglob(pat: str):
         if '/reclaimable/' in fn: continue
         if '/examples/' in fn: continue
         if '/.scripts/' in fn: continue
+        if '/FStar/src/' in fn: continue
         yield fn
 
 already_copied = {}

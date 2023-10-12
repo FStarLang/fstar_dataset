@@ -6,7 +6,7 @@ import sys
 tests = [
     ('FStar.OrdSet.eq_lemma', '()', False), # SMT pattern for eq_lemma
     ('FStar.OrdSet.eq_lemma', 'FStar.OrdSet.eq_lemma s1 s2', False), # referencing lemma itself
-    # ('FStar.Seq.Base.init_aux', "init_aux'", True), # private definition
+    ('FStar.Seq.Base.init_aux', "init_aux'", True), # private definition
     ('FStar.Seq.Base.append_assoc', '()', False),
     ('FStar.Seq.Base.append_assoc', 'assume false; ()', False), # reject assumes
     ('FStar.Sequence.Base.length_of_empty_is_zero_lemma', '()', True), # support private names
@@ -26,6 +26,7 @@ for lid, prf, should_check in tests:
     if passed == should_check:
         print(f'    ok {lid} = {prf}')
     else:
+        print(outputs[0]['detail'])
         kind = 'FALSE ' + ('POSITIVE' if passed else 'NEGATIVE')
         print(f'NOT OK {lid} = {prf} ({kind})')
 
