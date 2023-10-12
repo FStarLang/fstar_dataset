@@ -276,14 +276,14 @@ def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
         # for each entry in the json file
         for entry in json_data["defs"]:
             if reason := should_ignore(entry):
-                eprint(f'Ignoring {entry["name"]}: {reason}')
+                # eprint(f'Ignoring {entry["name"]}: {reason}')
                 continue
             # send the query to fstar insights
             out = process_one_instance(entry, deps, fstar_process)
-            if out['result']:
-                eprint(f'Verified {out["name"]}')
-            else:
-                eprint(f'Failed {out["name"]}')
+            # if out['result']:
+            #     eprint(f'Verified {out["name"]}')
+            # else:
+            #     eprint(f'Failed {out["name"]}')
             outputs.append(out)
         return outputs
 
