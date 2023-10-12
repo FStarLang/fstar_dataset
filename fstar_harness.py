@@ -142,7 +142,12 @@ class FStarIdeProcess:
         if res['status'] == 'success':
             self.call_checked('pop', {})
         self.call_checked('pop', {})
-        return (res['status'] == 'success'), res
+        success = res['status'] == 'success'
+        if any(err['number'] == Warning_WarnOnUse for err in res['response']):
+            success = False
+        return success, res
+
+Warning_WarnOnUse = 335
 
 def build_scaffolding(entry: Definition, deps: Dependency):
     module_name = deps["source_file"].rsplit(".", 1)[0]
