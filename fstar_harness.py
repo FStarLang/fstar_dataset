@@ -73,10 +73,12 @@ class InsightFile(TypedDict):
   dependencies: list[Dependency]
 
 def eprint(msg):
-    sys.stderr.write(msg + '\n')
+    sys.stderr.write(str(msg) + '\n')
     sys.stderr.flush()
 
 class FStarIdeProcess:
+    pushed_until_lid: Optional[str] = None
+
     def __init__(self, args: list[str]):
         self.process = subprocess.Popen(
             args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -136,12 +138,22 @@ class FStarIdeProcess:
         assert res['status'] == 'success', res
         return res
 
-    def check_snippet_at_decl(self, decl_name: str, solution: str):
-        self.call_checked('push-partial-checked-file', {'until-lid': decl_name})
-        res = self.call_simple('push', {'kind': 'full', 'line': 0, 'column': 0, 'code': solution})
+    def pop_partial_checked(self):
+        assert self.pushed_until_lid
+        self.call_checked('pop', {})
+        self.pushed_until_lid = None
+
+    def load_partial_checked_until(self, until_lid: str):
+        if self.pushed_until_lid:
+            self.pop_partial_checked()
+        self.call_checked('push-partial-checked-file', {'until-lid': until_lid})
+        self.pushed_until_lid = until_lid
+
+    def check_snippet_at_decl(self, decl_name: str, snippet: str) -> tuple[bool, Any]:
+        self.load_partial_checked_until(decl_name)
+        res = self.call_simple('push', {'kind': 'full', 'line': 0, 'column': 0, 'code': snippet})
         if res['status'] == 'success':
             self.call_checked('pop', {})
-        self.call_checked('pop', {})
         success = res['status'] == 'success'
         if any(err['number'] == Warning_WarnOnUse for err in res['response']):
             success = False
@@ -262,17 +274,24 @@ def should_ignore(entry: Definition) -> Optional[str]:
         return 'unreal lemma'
     return None
 
+def create_fstar_process_for_dataset(file_name: str, dataset_dir: str, extra_args: list[str] = []) -> FStarIdeProcess:
+    return FStarIdeProcess(["fstar.exe",
+        "--ide", os.path.basename(file_name),
+        "--report_assumes", "warn", '--include', dataset_dir] + extra_args)
+
+def create_fstar_process_for_json_file(json_data: InsightFile, dataset_dir: str, extra_args: list[str] = []) -> FStarIdeProcess:
+    return create_fstar_process_for_dataset(json_data['dependencies'][0]['source_file'], dataset_dir, extra_args)
+
 # for each entry in the json file, send the query to fstar insights
 def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
     outputs = []
-    deps = json_data["dependencies"][0]
-    fstar_args = ["fstar.exe",
+    extra_args = [
         # '--trace_error',
         # '--debug', 'FStar.Array',
         # '--debug_level', 'Rel,RelCheck,High',
-        "--ide", os.path.basename(deps['source_file']),
-        "--report_assumes", "warn", '--include', dataset_dir]
-    with FStarIdeProcess(fstar_args) as fstar_process:
+    ]
+    deps = json_data['dependencies'][0]
+    with create_fstar_process_for_json_file(json_data, dataset_dir, *extra_args) as fstar_process:
         # for each entry in the json file
         for entry in json_data["defs"]:
             if reason := should_ignore(entry):
