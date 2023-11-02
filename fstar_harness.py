@@ -52,11 +52,13 @@ class Vconfig(TypedDict):
   reuse_hint_for: Optional[Any]
 
 class Definition(TypedDict):
-  file_name: str
+  file_name: str # The filename where the definition logically appears (after interleaving)
+  source_file: str # The filename where the definition's source code is located (contains range start_line,start_col,end_line_end_col)
   start_line: int
   start_col: int
   end_line: int
   end_col: int
+  interleaved: bool # True if this definition was copied from the fsti file
   definition: str
   effect: str
   effect_flags: list[str]

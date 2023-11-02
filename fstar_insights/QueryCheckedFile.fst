@@ -339,7 +339,7 @@ let range_as_json_list (r:Range.range)
   : list (string & json)
   = let start_pos = Range.start_of_range r in
     let end_pos = Range.end_of_range r in
-    ["file_name", JsonStr (Range.file_of_range r);
+    ["source_file", JsonStr (Range.file_of_range r);
      "start_line", JsonInt (Range.line_of_pos start_pos);
      "start_col", JsonInt (Range.col_of_pos start_pos);
      "end_line", JsonInt (Range.line_of_pos end_pos);
@@ -389,9 +389,12 @@ let vconfig_as_json (v:VConfig.vconfig) =
   ]
 
 
-let defs_and_premises_as_json (l:defs_and_premises) =
+let defs_and_premises_as_json source_file (l:defs_and_premises) =
+  let is_interleaved = BU.basename source_file <> BU.basename (Range.file_of_range l.source_range) in
   JsonAssoc ((range_as_json_list l.source_range) @
              [
+              "file_name", JsonStr source_file;
+              "interleaved", JsonBool is_interleaved;
               ("definition", JsonStr l.definition);
               ("effect", JsonStr l.eff);
               ("effect_flags", JsonList (List.map JsonStr l.eff_flags));
@@ -818,7 +821,7 @@ let dump_simple_lemmas_as_json (source_file:string)
     | _ -> BU.print_string (string_of_json (JsonList simple_lemmas))
 
 let dump_all_lemma_premises_as_json (source_file:string)
-  = List.map defs_and_premises_as_json (find_defs_and_premises source_file)
+  = List.map (defs_and_premises_as_json source_file) (find_defs_and_premises source_file)
 
 
 
