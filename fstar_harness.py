@@ -161,8 +161,8 @@ class FStarIdeProcess:
 
 Warning_WarnOnUse = 335
 
-def build_scaffolding(entry: Definition, deps: Dependency):
-    module_name = deps["source_file"].rsplit(".", 1)[0]
+def build_scaffolding(entry: Definition):
+    module_name = os.path.splitext(os.path.basename(entry["file_name"]))[0]
     scaffolding = ''
 
     # add opens in reverse order
@@ -245,8 +245,8 @@ def build_scaffolding(entry: Definition, deps: Dependency):
     scaffolding += f"#push-options \"{options_string}\"\n"
     return scaffolding
 
-def process_one_instance(entry: Definition, deps: Dependency, fstar_process: FStarIdeProcess):
-    scaffolding = build_scaffolding(entry, deps)
+def process_one_instance(entry: Definition, fstar_process: FStarIdeProcess):
+    scaffolding = build_scaffolding(entry)
     lemma_long_name = entry["name"]
     goal = entry["source_type"]
     if goal == "<UNK>" :
@@ -290,7 +290,6 @@ def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
         # '--debug', 'FStar.Array',
         # '--debug_level', 'Rel,RelCheck,High',
     ]
-    deps = json_data['dependencies'][0]
     with create_fstar_process_for_json_file(json_data, dataset_dir, *extra_args) as fstar_process:
         # for each entry in the json file
         for entry in json_data["defs"]:
@@ -298,7 +297,7 @@ def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
                 # eprint(f'Ignoring {entry["name"]}: {reason}')
                 continue
             # send the query to fstar insights
-            out = process_one_instance(entry, deps, fstar_process)
+            out = process_one_instance(entry, fstar_process)
             # if out['result']:
             #     eprint(f'Verified {out["name"]}')
             # else:
