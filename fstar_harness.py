@@ -162,23 +162,20 @@ class FStarIdeProcess:
 Warning_WarnOnUse = 335
 
 def build_scaffolding(entry: Definition):
-    module_name = os.path.splitext(os.path.basename(entry["file_name"]))[0]
     scaffolding = ''
 
-    # add opens in reverse order
-    # for each open in the entry, add an open statement to the scaffolding
-    # iterate through entry["opens_and_abbrevs"] in reverse order
-    # if oa["abbrev"] is defined then use it
-    # otherwise use oa["open"]
-    for oa in reversed(entry["opens_and_abbrevs"]):
-        # if oa["abbrev"] is defined then use it
-        # otherwise use oa["open"]
-        if "abbrev" in oa:
-            scaffolding += "module " + oa["key"] + "=" + oa["value"] + "\n"
-        else:
-            scaffolding += "open " + oa["open"] + "\n"
-    # Necessary for FStar.Array where the local array should shadow the global one.
-    scaffolding += "open " + module_name + "\n"
+    module_name = os.path.splitext(os.path.basename(entry["file_name"]))[0]
+    if module_name == 'prims': module_name = 'Prims'
+
+    if module_name != 'Prims':
+        for oa in reversed(entry["opens_and_abbrevs"]):
+            if "abbrev" in oa:
+                scaffolding += "module " + oa["key"] + "=" + oa["value"] + "\n"
+            else:
+                scaffolding += "open " + oa["open"] + "\n"
+
+        # Necessary for FStar.Array where the local array should shadow the global one.
+        scaffolding += "open " + module_name + "\n"
 
     #translate vconfig to an option string
     # for each key/value pair in vconfig, add an element to an array of strings with the key and value
