@@ -26,6 +26,8 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
   let interactive : ref bool = BU.mk_ref false
   let add_include s = includes := s :: !includes
   let set_interactive () = interactive := true
+  let print_checked_deps_flag = BU.mk_ref false
+  let digest_flag = BU.mk_ref false
   let simple_lemmas : ref bool = BU.mk_ref false
   let set_simple_lemmas () = simple_lemmas := true
   let all_defs_and_premises : ref bool = BU.mk_ref false
@@ -37,6 +39,8 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
       (noshort, "find_simple_lemmas", ZeroArgs set_simple_lemmas, "scan a file for simple lemmas, dump output as json");
       (noshort, "all_defs_and_premises", ZeroArgs set_all_defs_and_premises, "scan a file for all definitions, dump their names, defs, types, premises, etc. as json");
       (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");
+      (noshort, "print_checked_deps", ZeroArgs (fun _ -> print_checked_deps_flag := true), "dump info from checked file");
+      (noshort, "digest", ZeroArgs (fun _ -> digest_flag := true), "print digest of file");
     ]
 
   let load_file_names () =
@@ -869,6 +873,37 @@ let interact () =
     in
     go()
 
+// Same as in FStar.CheckedFiles
+type checked_file_entry_stage1 = {
+  version: int;
+  digest: string;
+  parsing_data: Parser.Dep.parsing_data;
+}
+type checked_file_entry_stage2 = {
+  deps_dig: list (string * string);
+  tc_res: tc_result;
+}
+
+let print_checked_deps (filenames : list string) =
+  match filenames with | [filename] ->
+  let entry : option (checked_file_entry_stage1 * checked_file_entry_stage2) = BU.load_2values_from_file filename in
+  match entry with | Some ((s1,s2)) ->
+  let json_of_digest (digest : string) =
+    let digest = BU.base64_encode digest in
+    JsonStr digest in
+  let json_of_dep (file_name, digest) = JsonAssoc [
+    "module_name", JsonStr file_name;
+    "digest", json_of_digest digest;
+  ] in
+  BU.print_string (string_of_json (JsonAssoc [
+    "source_digest", json_of_digest s1.digest;
+    "deps_digest", JsonList (List.map json_of_dep s2.deps_dig);
+  ]))
+
+let print_digest (filenames : list string) =
+  match filenames with | [filename] ->
+  BU.print_string (BU.base64_encode (BU.digest_of_file filename))
+
 let main () =
   let usage () =
     print_stderr "Usage: fstar_insights.exe (--interactive | --find_simple_lemmas | --all_defs_and_premises) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
@@ -887,6 +922,8 @@ let main () =
     then List.iter dump_simple_lemmas_as_json files
     else if !interactive
     then interact ()
+    else if !print_checked_deps_flag then print_checked_deps !filenames
+    else if !digest_flag then print_digest !filenames
     else (usage (); exit 1)
   | _ ->
     usage();
