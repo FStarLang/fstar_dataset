@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import TypedDict, Any, Optional, NotRequired
+from typing import TypedDict, Any, Optional, Union
 import subprocess
 import json
 import sys
@@ -11,11 +11,15 @@ class Dependency(TypedDict):
   dependencies: list[str]
   depinfo: bool
 
-class OpenOrAbbrev(TypedDict):
-  open: NotRequired[str]
-  abbrev: NotRequired[bool]
-  key: NotRequired[str]
-  value: NotRequired[str]
+class Open(TypedDict):
+  open: str
+
+class Abbrev(TypedDict):
+  abbrev: bool
+  key: str
+  value: str
+
+OpenOrAbbrev = Union[Open, Abbrev]
 
 class Vconfig(TypedDict):
   initial_fuel: int
