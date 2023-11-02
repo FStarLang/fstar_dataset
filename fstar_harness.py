@@ -268,6 +268,8 @@ def process_one_instance(entry: Definition, fstar_process: FStarIdeProcess):
     return logged_solution
 
 def should_ignore(entry: Definition) -> Optional[str]:
+    if entry['interleaved']:
+        return 'interleaved'
     if entry['definition'].startswith('<'):
         return 'nondefinition'
     if '=' not in entry['source_definition']:
