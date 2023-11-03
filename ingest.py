@@ -52,6 +52,9 @@ def main():
         if basename.startswith('Test.fst'):
             print(f'Skipping {checked_fn} because name causes lots of shadowing')
             return False
+        if 'tls/cache/Karamel' in checked_fn:
+            print(f'Skipping {checked_fn} because module name clashes with the Model variant')
+            return False
         if basename in basename2files:
             print(f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}')
             return False
