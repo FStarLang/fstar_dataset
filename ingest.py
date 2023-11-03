@@ -20,8 +20,11 @@ def run_print_checked_deps(fn) -> tuple[str, Any, str]:
     return fn, json.loads(run_insights('--print_checked_deps', fn)), run_insights('--digest', fn)
 
 def run_extract(fn):
-    out = run_insights('--include', 'dataset', '--all_defs_and_premises', fn)
-    open(f'dataset/{fn}.json', 'w').write(out)
+    try:
+        out = run_insights('--include', 'dataset', '--all_defs_and_premises', fn)
+        open(f'dataset/{fn}.json', 'w').write(out)
+    except:
+        sys.stderr.write(f'Cannot extract {fn}\n'); sys.stderr.flush()
 
 def main():
     os.makedirs('dataset', exist_ok=True)
