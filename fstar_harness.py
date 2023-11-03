@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-from typing import TypedDict, Any, Optional, Union
+from typing import TypedDict, Any, Optional, Callable, Iterable, Union
 import subprocess
 import json
 import sys
 import os
+import threading
+import multiprocessing
+import random
+import queue
 
 class Dependency(TypedDict):
   source_file: str
@@ -167,6 +171,142 @@ class FStarIdeProcess:
 
 Warning_WarnOnUse = 335
 
+from dataclasses import dataclass
+
+PoolTask = Definition
+
+@dataclass
+class TodoItem:
+    task: PoolTask
+    on_done: Callable[[Any], None]
+
+    @property
+    def file(self):
+        return os.path.basename(self.task['file_name'])
+
+    @property
+    def defn(self):
+        return self.task['name']
+
+class FStarPool:
+    mutex = threading.Lock()
+    cv = threading.Condition(mutex)
+    todo: dict[str, dict[str, list[TodoItem]]] = {}
+    workers: list[threading.Thread]
+    cur_worker_file: list[Optional[str]]
+    cur_worker_defn: list[Optional[str]]
+    _terminated: bool = False
+
+    def __init__(self, dataset_dir: str, extra_args: list[str] = [], nworkers = None):
+        if not nworkers: nworkers = multiprocessing.cpu_count()
+        self.dataset_dir = dataset_dir
+        self.extra_args = extra_args
+        with self.mutex:
+            self.cur_worker_file = [None] * nworkers
+            self.cur_worker_defn = [None] * nworkers
+            self.workers = []
+            for i in range(nworkers):
+                thr = threading.Thread(name=f'fstar-worker-{i}', target=self._worker, args=(i,), daemon=True)
+                self.workers.append(thr)
+                thr.start()
+
+    def __enter__(self): return self
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        with self.cv:
+            if self._terminated: return
+            self._terminated = True
+            self.cv.notify_all()
+        for thr in self.workers: thr.join()
+
+    def _get_next(self, i):
+        if len(self.todo) == 0: return None
+
+        cur_file = self.cur_worker_file[i]
+        cur_defn = self.cur_worker_defn[i]
+
+        def go(f, d):
+            item = self.todo[f][d].pop()
+            if len(self.todo[f][d]) == 0:
+                del self.todo[f][d]
+            if len(self.todo[f]) == 0:
+                del self.todo[f]
+            return item
+
+        if cur_file in self.todo:
+            if cur_defn in self.todo[cur_file]:
+                return go(cur_file, cur_defn)
+
+            for d in self.todo[cur_file].keys():
+                if d not in self.cur_worker_defn:
+                    return go(cur_file, d)
+
+            return go(cur_file, random.choice(list(self.todo[cur_file])))
+
+        for f in self.todo.keys():
+            if f not in self.cur_worker_file:
+                return go(f, next(iter(self.todo[f].keys())))
+
+        f = random.choice(list(self.todo))
+        return go(f, random.choice(list(self.todo[f])))
+
+    def _worker(self, i):
+        cur_file: Optional[str] = None
+        proc: Optional[FStarIdeProcess] = None
+
+        while True:
+            with self.cv:
+                item = self._get_next(i)
+                while item is None:
+                    if self._terminated:
+                        return
+                    else:
+                        self.cv.wait()
+                        item = self._get_next(i)
+                item_file = item.file
+                self.cur_worker_defn[i] = item.task['name']
+                self.cur_worker_file[i] = item_file
+
+            if cur_file != item_file or proc is None:
+                if proc is not None:
+                    proc.process.terminate()
+                proc = create_fstar_process_for_dataset(item_file, self.dataset_dir, self.extra_args)
+                cur_file = item_file
+
+            try:
+                proc.load_partial_checked_until(item.task['name'])
+                res = process_one_instance(item.task, proc)
+                item.on_done(res)
+            except BaseException as e:
+                proc = None
+                cur_file = None
+                item.on_done(None)
+
+    def _enqueue(self, item: TodoItem):
+        item_file = item.file
+        if item_file not in self.todo: self.todo[item_file] = {}
+        if item.defn not in self.todo[item_file]: self.todo[item_file][item.defn] = []
+        self.todo[item_file][item.defn].append(item)
+
+    def _submit(self, items: Iterable[TodoItem]):
+        with self.cv:
+            for item in items:
+                self._enqueue(item)
+            self.cv.notify_all() # TODO: try to wake up workers with same file first
+
+    def process_instances_unordered(self, tasks: list[PoolTask]) -> Iterable[tuple[PoolTask, Optional[Any]]]:
+        q = queue.SimpleQueue()
+        def mk_item(task: PoolTask) -> TodoItem:
+            return TodoItem(on_done = lambda res: q.put((task, res)), task=task)
+        self._submit(mk_item(task) for task in tasks)
+        for _ in range(len(tasks)):
+            yield q.get()
+
 def build_scaffolding(entry: Definition):
     scaffolding = ''
 
@@ -310,13 +450,34 @@ def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):
             outputs.append(out)
         return outputs
 
-if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        sys.stderr.write('Usage: python3 fstar_harness.py dir/dataset < Input.File.json\n')
-        exit(1)
-    dataset_dir = sys.argv[1]
+def pool_tasks_of_file(json_data: InsightFile, warn=False) -> list[PoolTask]:
+    items: list[PoolTask] = []
+    for entry in json_data["defs"]:
+        if reason := should_ignore(entry):
+            if warn: eprint(f'Ignoring {entry["name"]}: {reason}')
+            continue
+        items.append(entry)
+    return items
 
-    # read the json file specified on the first command line argument
-    json_data: InsightFile = json.load(sys.stdin)
-    json.dump(send_queries_to_fstar(json_data, dataset_dir), sys.stdout)
+if __name__ == '__main__':
+    import tqdm
+
+    if len(sys.argv) < 2:
+        sys.stderr.write('Usage: python3 fstar_harness.py dir/dataset Input.File1.json Input.File2.json ...\n')
+        exit(1)
+    dataset_dir, *input_files = sys.argv[1:]
+
+    tasks = []
+    for f in input_files:
+        j: InsightFile = json.load(open(f))
+        tasks += pool_tasks_of_file(j)
+
+    extra_args = [
+        # '--trace_error',
+        # '--debug', 'FStar.Array',
+        # '--debug_level', 'Rel,RelCheck,High',
+    ]
+    with FStarPool(dataset_dir, extra_args) as pool:
+        outputs = [ res[1] for res in tqdm.tqdm(pool.process_instances_unordered(tasks), total=len(tasks)) ]
+    json.dump(outputs, sys.stdout)
     sys.stdout.write('\n')

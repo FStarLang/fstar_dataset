@@ -12,9 +12,9 @@ To run:
 
  2. Make sure you have done `eval $(opam env)` and set the `FSTAR_HOME` environment variable.
 
- 3. `./ingest.py .../path/to/FStar` (or `./ingest.py .../path/to/everest`)
+ 3. `make -C fstar_insights`
 
- 4. `make -C fstar_insights`
+ 4. `./ingest.py .../path/to/FStar` (or `./ingest.py .../path/to/everest`)
 
  5. `make extract -j$(nproc)`
 
@@ -22,9 +22,8 @@ To run:
 explain where the files are stored and what info they contain
 -->
 
-After all that, you can run `make harness-check -j$(nproc)`
+After all that, you can run `make harness-checked.json`
 as a sanity check to see if the harness can verify extracted proofs.
 
 This repo also provides `fstar_harness.py`, which is a harness to run F\*
 against sample proofs collected from the dataset.
-The script must be run from the `fstar_dataset/` directory.

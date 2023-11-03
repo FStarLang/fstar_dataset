@@ -12,4 +12,4 @@ env.bak/
 venv.bak/
 
 /dataset
-/harness-checked
+harness-checked.json
