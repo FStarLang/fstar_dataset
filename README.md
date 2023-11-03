@@ -16,8 +16,6 @@ To run:
 
  4. `./ingest.py .../path/to/FStar` (or `./ingest.py .../path/to/everest`)
 
- 5. `make extract -j$(nproc)`
-
 <!--
 explain where the files are stored and what info they contain
 -->

@@ -19,6 +19,10 @@ def run_digest(fn) -> tuple[str, str]:
 def run_print_checked_deps(fn) -> tuple[str, Any, str]:
     return fn, json.loads(run_insights('--print_checked_deps', fn)), run_insights('--digest', fn)
 
+def run_extract(fn):
+    out = run_insights('--include', 'dataset', '--all_defs_and_premises', fn)
+    open(f'dataset/{fn}.json', 'w').write(out)
+
 def main():
     os.makedirs('dataset', exist_ok=True)
 
@@ -77,6 +81,8 @@ def main():
     for checked_fn, src_fn in tqdm.tqdm(basename2files.values(), desc = 'Copying files'):
         shutil.copy(src_fn, 'dataset/')
         shutil.copy(checked_fn, 'dataset/')
+
+    list(tqdm.tqdm(pool.imap_unordered(run_extract, basename2files.keys()), total=len(basename2files), desc='Extracting insights'))
 
 if __name__ == '__main__':
     main()
