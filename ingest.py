@@ -9,6 +9,7 @@ import subprocess
 import multiprocessing
 import tqdm
 import json
+from fstar_harness import InsightFile
 
 def run_insights(*args):
     return subprocess.check_output(['fstar_insights/ocaml/bin/fstar_insights.exe'] + list(args), encoding='utf-8')
@@ -19,12 +20,28 @@ def run_digest(fn) -> tuple[str, str]:
 def run_print_checked_deps(fn) -> tuple[str, Any, str]:
     return fn, json.loads(run_insights('--print_checked_deps', fn)), run_insights('--digest', fn)
 
-def run_extract(fn):
+def run_extract(fn_orig_src_fn: tuple[str, str]):
+    fn, orig_src_fn = fn_orig_src_fn
     try:
-        out = run_insights('--include', 'dataset', '--all_defs_and_premises', fn)
-        open(f'dataset/{fn}.json', 'w').write(out)
+        out: InsightFile = json.loads(run_insights('--include', 'dataset', '--all_defs_and_premises', fn))
     except:
         sys.stderr.write(f'Cannot extract {fn}\n'); sys.stderr.flush()
+        return
+
+    orig_dir = os.path.dirname(orig_src_fn)
+    git_rev = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=orig_dir, encoding='utf-8').strip()
+    git_repo_dir = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], cwd=orig_dir, encoding='utf-8').strip()
+    source_file_name = os.path.relpath(os.path.realpath(orig_src_fn), git_repo_dir)
+    git_url = subprocess.check_output(['git', 'remote', 'get-url', 'origin'], cwd=orig_dir, encoding='utf-8').strip()
+    git_url = git_url.replace('git@github.com:', 'https://github.com/')
+
+    out['source'] = {
+        'project_name': os.path.basename(git_repo_dir),
+        'file_name': source_file_name,
+        'git_rev': git_rev,
+        'git_url': git_url,
+    }
+    json.dump(out, open(f'dataset/{fn}.json', 'w'))
 
 def main():
     os.makedirs('dataset', exist_ok=True)
@@ -88,7 +105,8 @@ def main():
         shutil.copy(src_fn, 'dataset/')
         shutil.copy(checked_fn, 'dataset/')
 
-    list(tqdm.tqdm(pool.imap_unordered(run_extract, basename2files.keys()), total=len(basename2files), desc='Extracting insights'))
+    list(tqdm.tqdm(pool.imap_unordered(run_extract, [ (bn, fn[1]) for bn, fn in basename2files.items() ]),
+        total=len(basename2files), desc='Extracting insights'))
 
 if __name__ == '__main__':
     main()

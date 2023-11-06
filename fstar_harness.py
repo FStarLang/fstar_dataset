@@ -78,7 +78,18 @@ class Definition(TypedDict):
   opens_and_abbrevs: list[OpenOrAbbrev]
   vconfig: Optional[Vconfig]
 
+class Source(TypedDict):
+    # Git repository name, e.g. `hacl-star`
+    project_name: str
+    # File name relative to the repository, e.g. `code/curve25519/Hacl.Impl.Curve25519.Lemmas.fst`
+    file_name: str
+    # Revision of the git repository
+    git_rev: str
+    # Url of the git repository
+    git_url: str
+
 class InsightFile(TypedDict):
+  source: Source
   defs: list[Definition]
   dependencies: list[Dependency]
 
