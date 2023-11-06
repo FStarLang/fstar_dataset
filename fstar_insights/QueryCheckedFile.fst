@@ -28,15 +28,12 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
   let set_interactive () = interactive := true
   let print_checked_deps_flag = BU.mk_ref false
   let digest_flag = BU.mk_ref false
-  let simple_lemmas : ref bool = BU.mk_ref false
-  let set_simple_lemmas () = simple_lemmas := true
   let all_defs_and_premises : ref bool = BU.mk_ref false
   let set_all_defs_and_premises () = all_defs_and_premises := true
   let options : list FStar.Getopt.opt =
     let open FStar.Getopt in
     [
       (noshort, "include", OneArg (add_include, "include"), "include path");
-      (noshort, "find_simple_lemmas", ZeroArgs set_simple_lemmas, "scan a file for simple lemmas, dump output as json");
       (noshort, "all_defs_and_premises", ZeroArgs set_all_defs_and_premises, "scan a file for all definitions, dump their names, defs, types, premises, etc. as json");
       (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");
       (noshort, "print_checked_deps", ZeroArgs (fun _ -> print_checked_deps_flag := true), "dump info from checked file");
@@ -323,6 +320,7 @@ type defs_and_premises = {
   name: string;
   premises: list string;
   proof_features: list string;
+  is_simple_lemma: bool;
   source_range: Range.range;
   typ: string;
   source_typ:string;
@@ -398,6 +396,7 @@ let defs_and_premises_as_json source_file (l:defs_and_premises) =
               ("definition", JsonStr l.definition);
               ("effect", JsonStr l.eff);
               ("effect_flags", JsonList (List.map JsonStr l.eff_flags));
+              "is_simple_lemma", JsonBool l.is_simple_lemma;
               ("mutual_with", JsonList (List.map JsonStr l.mutual_with));
               ("name", JsonStr l.name);
               ("premises", JsonList (List.map JsonStr l.premises));
@@ -602,6 +601,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           eff_flags = []; (* if a declare typ does not have an assume qualified, then the def will show up *)
           mutual_with = [];
           proof_features = [] ;
+          is_simple_lemma = false;
           source_typ;
           source_def;
           prompt;
@@ -619,6 +619,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           eff_flags = [];
           mutual_with = [];
           proof_features = [] ;
+          is_simple_lemma = false;
           source_typ;
           source_def;
           prompt;
@@ -638,6 +639,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           eff_flags = [];
           mutual_with = List.map Ident.string_of_lid mutuals;
           proof_features = [] ;
+          is_simple_lemma = false;
           source_typ;
           source_def;
           prompt;
@@ -660,6 +662,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
           eff_flags = [];
           mutual_with = List.map Ident.string_of_lid data.mutuals ;
           proof_features = [] ;
+          is_simple_lemma = false;
           source_typ;
           source_def;
           prompt;
@@ -715,6 +718,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
                               (BU.set_elements (FStar.Syntax.Free.fvars lb.lbdef));
           eff = Ident.string_of_lid (U.comp_effect_name comp);
           eff_flags = List.map P.cflag_to_string flags;
+          is_simple_lemma = is_simple_lemma se;
           mutual_with;
           proof_features = maybe_rec;
           source_typ;
@@ -778,29 +782,10 @@ let read_module_sigelts (source_file:string) : list sigelt =
       BU.print_string (FStar.Errors.format_issue issue);
       exit 1
 
-let find_simple_lemmas (source_file:string) : list sigelt =
-  let sigelts = read_module_sigelts source_file in
-  List.filter is_simple_lemma sigelts
-
 let find_defs_and_premises (source_file:string)
   : list defs_and_premises =
   let sigelts = read_module_sigelts source_file in
   List.collect (functions_called_by_user_in_def source_file sigelts) sigelts
-
-let simple_lemma_as_json
-      (source_file:string)
-      (se:sigelt)
- : json
- = match se.sigel with
-   | Sig_let { lbs=(_, [lb]); lids=[name] } ->
-     let name = JsonStr (Ident.string_of_lid name) in
-     let lemma_statement = P.term_to_string lb.lbtyp in
-     let criterion = JsonStr "simple lemma" in
-     JsonAssoc (["source_file", JsonStr source_file;
-                 "name", name;
-                 "lemma_statement", JsonStr lemma_statement;
-                 "criterion", criterion]@range_as_json_list se.sigrng)
-   | _ -> JsonNull
 
 let dep_as_json (se:sigelt)
   : list json
@@ -811,19 +796,8 @@ let dep_as_json (se:sigelt)
     | Sig_declare_typ { lid=name; t } -> [with_name name]
     | _ -> []
 
-let dump_simple_lemmas_as_json (source_file:string)
-  = let simple_lemmas =
-        List.map (simple_lemma_as_json source_file)
-                 (find_simple_lemmas source_file)
-    in
-    match simple_lemmas with
-    | [] -> ()
-    | _ -> BU.print_string (string_of_json (JsonList simple_lemmas))
-
 let dump_all_lemma_premises_as_json (source_file:string)
   = List.map (defs_and_premises_as_json source_file) (find_defs_and_premises source_file)
-
-
 
 (* prefer an `fsti` over an `fst` *)
 let dump_dependency_info_as_json (source_file:string)
@@ -909,7 +883,7 @@ let print_digest (filenames : list string) =
 
 let main () =
   let usage () =
-    print_stderr "Usage: fstar_insights.exe (--interactive | --find_simple_lemmas | --all_defs_and_premises) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
+    print_stderr "Usage: fstar_insights.exe (--interactive | --all_defs_and_premises | --print_checked_deps | --digest) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
   in
   let filenames = BU.mk_ref [] in
   let res = FStar.Getopt.parse_cmdline options (fun s -> filenames :=  s::!filenames; Getopt.Success) in
@@ -921,8 +895,6 @@ let main () =
       let lemmas_premises = List.concatMap dump_all_lemma_premises_as_json files in
       let deps = List.concatMap dump_dependency_info_as_json files in
       BU.print_string (string_of_json (JsonAssoc [("defs", JsonList lemmas_premises); ("dependencies", JsonList deps)]))
-    else if !simple_lemmas
-    then List.iter dump_simple_lemmas_as_json files
     else if !interactive
     then interact ()
     else if !print_checked_deps_flag then print_checked_deps !filenames

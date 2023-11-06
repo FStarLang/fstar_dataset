@@ -70,6 +70,7 @@ class Definition(TypedDict):
   name: str
   premises: list[str]
   proof_features: list[Any]
+  is_simple_lemma: bool
   type: str
   source_type: str
   source_definition: str
