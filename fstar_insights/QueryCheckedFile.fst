@@ -23,9 +23,7 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
   module P = FStar.Syntax.Print
 
   let includes : ref (list string) = BU.mk_ref []
-  let interactive : ref bool = BU.mk_ref false
   let add_include s = includes := s :: !includes
-  let set_interactive () = interactive := true
   let print_checked_deps_flag = BU.mk_ref false
   let digest_flag = BU.mk_ref false
   let all_defs_and_premises : ref bool = BU.mk_ref false
@@ -35,7 +33,6 @@ Produces a processed json file from `fst`/`fsti` plus a `queries.jsonl`, where t
     [
       (noshort, "include", OneArg (add_include, "include"), "include path");
       (noshort, "all_defs_and_premises", ZeroArgs set_all_defs_and_premises, "scan a file for all definitions, dump their names, defs, types, premises, etc. as json");
-      (noshort, "interactive", ZeroArgs set_interactive, "interactive mode");
       (noshort, "print_checked_deps", ZeroArgs (fun _ -> print_checked_deps_flag := true), "dump info from checked file");
       (noshort, "digest", ZeroArgs (fun _ -> digest_flag := true), "print digest of file");
     ]
@@ -813,43 +810,6 @@ let dump_dependency_info_as_json (source_file:string)
                              (List.tail cfc.deps)));
                     ("depinfo", JsonBool true)]] (* tag that this is dependency information. Poor man's sum type *)
 
-module JU = FStar.Interactive.JsonHelper
-
-let run_json_cmd (j:json) =
-  let ja = JU.js_assoc j in
-  match JU.try_assoc "command" ja with
-  | Some (JsonStr "find_deps") -> (
-    let open JU in
-    let payload = js_assoc (assoc "payload" ja) in
-    let source_file = JU.js_str (assoc "source_file" payload) in
-    let name = js_str (assoc "name" payload) in
-    let user_called_lemmas, ses = dependences_of_definition source_file name in
-    let user_called_lemmas = JsonList (List.map JsonStr user_called_lemmas) in
-    let json = JsonList (List.collect dep_as_json ses) in
-    let out = JsonAssoc [("user_called_lemmas", user_called_lemmas);
-                         ("dependences", json)] in
-    BU.print_string (string_of_json out);
-    BU.print_string "\n"
-   )
-  | Some j ->
-    print_stderr "Unknown command: %s" [string_of_json j]
-  | None ->
-    print_stderr "command not found" []
-
-let interact () =
-    let stdin = BU.open_stdin () in
-    let rec go () =
-      match BU.read_line stdin with
-      | None -> ()
-      | Some line ->
-        match Json.json_of_string line with
-        | None -> print_stderr "Could not parse json: %s\n" [line]; exit 1
-        | Some cmd ->
-          run_json_cmd cmd;
-          go()
-    in
-    go()
-
 // Same as in FStar.CheckedFiles
 type checked_file_entry_stage1 = {
   version: int;
@@ -883,7 +843,7 @@ let print_digest (filenames : list string) =
 
 let main () =
   let usage () =
-    print_stderr "Usage: fstar_insights.exe (--interactive | --all_defs_and_premises | --print_checked_deps | --digest) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
+    print_stderr "Usage: fstar_insights.exe (--all_defs_and_premises | --print_checked_deps | --digest) --include path1 ... --include path_n source_file.(fst|fsti)\n" []
   in
   let filenames = BU.mk_ref [] in
   let res = FStar.Getopt.parse_cmdline options (fun s -> filenames :=  s::!filenames; Getopt.Success) in
@@ -895,8 +855,6 @@ let main () =
       let lemmas_premises = List.concatMap dump_all_lemma_premises_as_json files in
       let deps = List.concatMap dump_dependency_info_as_json files in
       BU.print_string (string_of_json (JsonAssoc [("defs", JsonList lemmas_premises); ("dependencies", JsonList deps)]))
-    else if !interactive
-    then interact ()
     else if !print_checked_deps_flag then print_checked_deps !filenames
     else if !digest_flag then print_digest !filenames
     else (usage (); exit 1)
@@ -904,7 +862,6 @@ let main () =
     usage();
     exit 1
 
-#push-options "--warn_error -272"
 let _ =
   try
     FStar.Main.setup_hooks();
@@ -913,4 +870,3 @@ let _ =
   | e -> //when false ->
     print_stderr "Exception: %s\n" [BU.print_exn e];
     exit 1
-#pop-options
