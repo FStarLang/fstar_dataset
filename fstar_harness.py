@@ -91,7 +91,7 @@ class Source(TypedDict):
 class InsightFile(TypedDict):
   source: Source
   defs: list[Definition]
-  dependencies: list[Dependency]
+  dependencies: tuple[Dependency]
 
 def eprint(msg):
     sys.stderr.write(str(msg) + '\n')
