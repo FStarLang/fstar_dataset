@@ -10,48 +10,48 @@ import random
 import queue
 
 class Dependency(TypedDict):
-  source_file: str
-  checked_file: str
-  dependencies: list[str]
+    source_file: str
+    checked_file: str
+    dependencies: list[str]
 
 class Open(TypedDict):
-  open: str
+    open: str
 
 class Abbrev(TypedDict):
-  abbrev: str
-  full_module: str
+    abbrev: str
+    full_module: str
 
 OpenOrAbbrev = Union[Open, Abbrev]
 
 class Vconfig(TypedDict):
-  initial_fuel: int
-  max_fuel: int
-  initial_ifuel: int
-  max_ifuel: int
-  detail_errors: bool
-  detail_hint_replay: bool
-  no_smt: bool
-  quake_lo: int
-  quake_hi: int
-  quake_keep: bool
-  retry: bool
-  smtencoding_elim_box: bool
-  smtencoding_nl_arith_repr: str
-  smtencoding_l_arith_repr: str
-  smtencoding_valid_intro: bool
-  smtencoding_valid_elim: bool
-  tcnorm: bool
-  no_plugins: bool
-  no_tactics: bool
-  z3cliopt: list[str]
-  z3smtopt: list[str]
-  z3refresh: bool
-  z3rlimit: int
-  z3rlimit_factor: int
-  z3seed: int
-  z3version: str
-  trivial_pre_for_unannotated_effectful_fns: bool
-  reuse_hint_for: Optional[str]
+    initial_fuel: int
+    max_fuel: int
+    initial_ifuel: int
+    max_ifuel: int
+    detail_errors: bool
+    detail_hint_replay: bool
+    no_smt: bool
+    quake_lo: int
+    quake_hi: int
+    quake_keep: bool
+    retry: bool
+    smtencoding_elim_box: bool
+    smtencoding_nl_arith_repr: str
+    smtencoding_l_arith_repr: str
+    smtencoding_valid_intro: bool
+    smtencoding_valid_elim: bool
+    tcnorm: bool
+    no_plugins: bool
+    no_tactics: bool
+    z3cliopt: list[str]
+    z3smtopt: list[str]
+    z3refresh: bool
+    z3rlimit: int
+    z3rlimit_factor: int
+    z3seed: int
+    z3version: str
+    trivial_pre_for_unannotated_effectful_fns: bool
+    reuse_hint_for: Optional[str]
 
 class Range(TypedDict):
     file_name: str
@@ -61,24 +61,24 @@ class Range(TypedDict):
     end_col: int
 
 class Definition(TypedDict):
-  file_name: str # The filename where the definition logically appears (after interleaving)
-  source_range: Range # The range where the definition's source code is located
-  interleaved: bool # True if this definition was copied from the fsti file
-  definition: str
-  effect: str
-  effect_flags: list[str]
-  mutual_with: list[str]
-  name: str
-  premises: list[str]
-  proof_features: list[str]
-  is_simple_lemma: bool
-  type: str
-  source_type: str
-  source_definition: str
-  prompt: str
-  expected_response: str
-  opens_and_abbrevs: list[OpenOrAbbrev]
-  vconfig: Optional[Vconfig]
+    file_name: str # The filename where the definition logically appears (after interleaving)
+    source_range: Range # The range where the definition's source code is located
+    interleaved: bool # True if this definition was copied from the fsti file
+    definition: str
+    effect: str
+    effect_flags: list[str]
+    mutual_with: list[str]
+    name: str
+    premises: list[str]
+    proof_features: list[str]
+    is_simple_lemma: bool
+    type: str
+    source_type: str
+    source_definition: str
+    prompt: str
+    expected_response: str
+    opens_and_abbrevs: list[OpenOrAbbrev]
+    vconfig: Optional[Vconfig]
 
 class Source(TypedDict):
     # Git repository name, e.g. `hacl-star`
@@ -91,11 +91,11 @@ class Source(TypedDict):
     git_url: str
 
 class InsightFileFirstPass(TypedDict):
-  defs: list[Definition]
-  dependencies: Dependency
+    defs: list[Definition]
+    dependencies: Dependency
 
 class InsightFile(InsightFileFirstPass):
-  source: Source
+    source: Source
 
 def eprint(msg):
     sys.stderr.write(str(msg) + '\n')
