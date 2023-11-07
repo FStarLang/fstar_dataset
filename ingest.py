@@ -9,7 +9,7 @@ import subprocess
 import multiprocessing
 import tqdm
 import json
-from fstar_harness import InsightFile
+from fstar_harness import InsightFile, InsightFileFirstPass
 
 def run_insights(*args):
     return subprocess.check_output(['fstar_insights/ocaml/bin/fstar_insights.exe'] + list(args), encoding='utf-8')
@@ -23,7 +23,7 @@ def run_print_checked_deps(fn) -> tuple[str, Any, str]:
 def run_extract(fn_orig_src_fn: tuple[str, str]):
     fn, orig_src_fn = fn_orig_src_fn
     try:
-        out: InsightFile = json.loads(run_insights('--include', 'dataset', '--all_defs_and_premises', fn))
+        out: InsightFileFirstPass = json.loads(run_insights('--include', 'dataset', '--all_defs_and_premises', fn))
     except:
         sys.stderr.write(f'Cannot extract {fn}\n'); sys.stderr.flush()
         return
@@ -35,13 +35,16 @@ def run_extract(fn_orig_src_fn: tuple[str, str]):
     git_url = subprocess.check_output(['git', 'remote', 'get-url', 'origin'], cwd=orig_dir, encoding='utf-8').strip()
     git_url = git_url.replace('git@github.com:', 'https://github.com/')
 
-    out['source'] = {
-        'project_name': os.path.basename(git_repo_dir),
-        'file_name': source_file_name,
-        'git_rev': git_rev,
-        'git_url': git_url,
+    j: InsightFile = {
+        **out,
+        'source': {
+            'project_name': os.path.basename(git_repo_dir),
+            'file_name': source_file_name,
+            'git_rev': git_rev,
+            'git_url': git_url,
+        },
     }
-    json.dump(out, open(f'dataset/{fn}.json', 'w'))
+    json.dump(j, open(f'dataset/{fn}.json', 'w'))
 
 def main():
     os.makedirs('dataset', exist_ok=True)

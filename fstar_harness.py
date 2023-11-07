@@ -13,15 +13,13 @@ class Dependency(TypedDict):
   source_file: str
   checked_file: str
   dependencies: list[str]
-  depinfo: bool
 
 class Open(TypedDict):
   open: str
 
 class Abbrev(TypedDict):
-  abbrev: bool
-  key: str
-  value: str
+  abbrev: str
+  full_module: str
 
 OpenOrAbbrev = Union[Open, Abbrev]
 
@@ -46,30 +44,33 @@ class Vconfig(TypedDict):
   no_plugins: bool
   no_tactics: bool
   z3cliopt: list[str]
-  z3smtopt: list[Any]
+  z3smtopt: list[str]
   z3refresh: bool
   z3rlimit: int
   z3rlimit_factor: int
   z3seed: int
   z3version: str
   trivial_pre_for_unannotated_effectful_fns: bool
-  reuse_hint_for: Optional[Any]
+  reuse_hint_for: Optional[str]
+
+class Range(TypedDict):
+    file_name: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
 
 class Definition(TypedDict):
   file_name: str # The filename where the definition logically appears (after interleaving)
-  source_file: str # The filename where the definition's source code is located (contains range start_line,start_col,end_line_end_col)
-  start_line: int
-  start_col: int
-  end_line: int
-  end_col: int
+  source_range: Range # The range where the definition's source code is located
   interleaved: bool # True if this definition was copied from the fsti file
   definition: str
   effect: str
   effect_flags: list[str]
-  mutual_with: list[Any]
+  mutual_with: list[str]
   name: str
   premises: list[str]
-  proof_features: list[Any]
+  proof_features: list[str]
   is_simple_lemma: bool
   type: str
   source_type: str
@@ -89,10 +90,12 @@ class Source(TypedDict):
     # Url of the git repository
     git_url: str
 
-class InsightFile(TypedDict):
-  source: Source
+class InsightFileFirstPass(TypedDict):
   defs: list[Definition]
-  dependencies: tuple[Dependency]
+  dependencies: Dependency
+
+class InsightFile(InsightFileFirstPass):
+  source: Source
 
 def eprint(msg):
     sys.stderr.write(str(msg) + '\n')
@@ -328,7 +331,7 @@ def build_scaffolding(entry: Definition):
     if module_name != 'Prims':
         for oa in reversed(entry["opens_and_abbrevs"]):
             if "abbrev" in oa:
-                scaffolding += "module " + oa["key"] + "=" + oa["value"] + "\n"
+                scaffolding += "module " + oa["abbrev"] + "=" + oa["full_module"] + "\n"
             else:
                 scaffolding += "open " + oa["open"] + "\n"
 
@@ -437,7 +440,7 @@ def create_fstar_process_for_dataset(file_name: str, dataset_dir: str, extra_arg
         "--report_assumes", "warn", '--include', dataset_dir] + extra_args)
 
 def create_fstar_process_for_json_file(json_data: InsightFile, dataset_dir: str, extra_args: list[str] = []) -> FStarIdeProcess:
-    return create_fstar_process_for_dataset(json_data['dependencies'][0]['source_file'], dataset_dir, extra_args)
+    return create_fstar_process_for_dataset(json_data['dependencies']['source_file'], dataset_dir, extra_args)
 
 # for each entry in the json file, send the query to fstar insights
 def send_queries_to_fstar(json_data: InsightFile, dataset_dir: str):

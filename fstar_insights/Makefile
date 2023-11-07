@@ -13,7 +13,7 @@ include $(FSTAR_HOME)/src/Makefile.boot.common
 OUTPUT_DIRECTORY = $(CURDIR)/ocaml
 FSTAR_C=$(RUNLIM) $(FSTAR_EXE) $(SIL) $(FSTAR_BOOT_OPTIONS)
 
-EXTRACT_FILES=QueryCheckedFile.ml
+EXTRACT_FILES=QueryCheckedFile.ml JsonHelper.ml
 extract: $(addprefix $(OUTPUT_DIRECTORY)/,$(EXTRACT_FILES))
 
 .PHONY: exe
@@ -22,7 +22,7 @@ exe: extract
 
 # And then, in a separate invocation, from each .checked.lax we
 # extract an .ml file
-$(OUTPUT_DIRECTORY)/%.ml: %.fst
+$(OUTPUT_DIRECTORY)/%.ml: %.fst JsonHelper.fst
 	mkdir -p $(OUTPUT_DIRECTORY)
 	$(call msg, "EXTRACT", $(notdir $@))
 	$(Q)$(BENCHMARK_PRE) $(FSTAR_C) $< \
@@ -30,6 +30,9 @@ $(OUTPUT_DIRECTORY)/%.ml: %.fst
                    --codegen OCaml \
                    --extract_module $(basename $(notdir $<))
 	chmod -x $@
+
+JsonHelper.fst: mk_jsonhelper.py ../fstar_harness.py
+	python $< >$@
 
 %.config.json: mkconfig.py
 	python mkconfig.py >$@

@@ -307,107 +307,53 @@ let load_dependences (cfc:checked_file_content)
     in
     aux deps []
 
-//[(lemma_1, [premises;in;lemma1]); ... (lemma_n, ...)]
-//where lemma_1 ...lemma_n are mutually defined
-type defs_and_premises = {
-  definition:string;
-  eff: string;
-  eff_flags: list string;
-  mutual_with:list string;
-  name: string;
-  premises: list string;
-  proof_features: list string;
-  is_simple_lemma: bool;
-  source_range: Range.range;
-  typ: string;
-  source_typ:string;
-  source_def:string;
-  prompt:string;
-  expected_response:string;
-  opens_and_abbrevs:list (either string (string & string));
-  vconfig: option VConfig.vconfig
-}
+module JH = JsonHelper
 
 open FStar.Json
 
-let range_as_json_list (r:Range.range)
-  : list (string & json)
-  = let start_pos = Range.start_of_range r in
-    let end_pos = Range.end_of_range r in
-    ["source_file", JsonStr (Range.file_of_range r);
-     "start_line", JsonInt (Range.line_of_pos start_pos);
-     "start_col", JsonInt (Range.col_of_pos start_pos);
-     "end_line", JsonInt (Range.line_of_pos end_pos);
-     "end_col", JsonInt (Range.col_of_pos end_pos)]
+let jh_of_range (r: Range.range) : JH.range =
+  let start_pos = Range.start_of_range r in
+  let end_pos = Range.end_of_range r in
+  {
+    file_name1 = Range.file_of_range r;
+    start_line = Range.line_of_pos start_pos;
+    start_col = Range.col_of_pos start_pos;
+    end_line = Range.line_of_pos end_pos;
+    end_col = Range.col_of_pos end_pos;
+  }
 
-let open_or_abbrev_as_json (d:either string (string & string)) = 
-  match d with
-  | Inl m ->
-    //open m
-    JsonAssoc [("open", JsonStr m)]
-
-  | Inr (m, n) ->
-    //module m = n
-    JsonAssoc [("abbrev", JsonBool true); ("key", JsonStr m); ("value", JsonStr n)]
-
-let vconfig_as_json (v:VConfig.vconfig) =
+let jh_of_vconfig (v:VConfig.vconfig) : JH.vconfig1 =
   let open FStar.VConfig in
-  JsonAssoc [
-    "initial_fuel", JsonInt v.initial_fuel;
-    "max_fuel", JsonInt v.max_fuel;
-    "initial_ifuel", JsonInt v.initial_ifuel;
-    "max_ifuel", JsonInt v.max_ifuel;
-    "detail_errors", JsonBool v.detail_errors;
-    "detail_hint_replay", JsonBool v.detail_hint_replay;
-    "no_smt", JsonBool v.no_smt;
-    "quake_lo", JsonInt v.quake_lo;
-    "quake_hi", JsonInt v.quake_hi;
-    "quake_keep", JsonBool v.quake_keep;
-    "retry", JsonBool v.retry;
-    "smtencoding_elim_box", JsonBool v.smtencoding_elim_box;
-    "smtencoding_nl_arith_repr", JsonStr v.smtencoding_nl_arith_repr;
-    "smtencoding_l_arith_repr", JsonStr v.smtencoding_l_arith_repr;
-    "smtencoding_valid_intro", JsonBool v.smtencoding_valid_intro;
-    "smtencoding_valid_elim", JsonBool v.smtencoding_valid_elim;
-    "tcnorm", JsonBool v.tcnorm;
-    "no_plugins", JsonBool v.no_plugins;
-    "no_tactics", JsonBool v.no_tactics;
-    "z3cliopt", JsonList (List.map JsonStr v.z3cliopt);
-    "z3smtopt", JsonList (List.map JsonStr v.z3smtopt);
-    "z3refresh", JsonBool v.z3refresh;
-    "z3rlimit", JsonInt v.z3rlimit;
-    "z3rlimit_factor", JsonInt v.z3rlimit_factor;
-    "z3seed", JsonInt v.z3seed;
-    "z3version", JsonStr v.z3version;
-    "trivial_pre_for_unannotated_effectful_fns", JsonBool v.trivial_pre_for_unannotated_effectful_fns;
-    "reuse_hint_for", (match v.reuse_hint_for with None -> JsonNull | Some s -> JsonStr s)
-  ]
-
-
-let defs_and_premises_as_json source_file (l:defs_and_premises) =
-  let is_interleaved = BU.basename source_file <> BU.basename (Range.file_of_range l.source_range) in
-  JsonAssoc ((range_as_json_list l.source_range) @
-             [
-              "file_name", JsonStr source_file;
-              "interleaved", JsonBool is_interleaved;
-              ("definition", JsonStr l.definition);
-              ("effect", JsonStr l.eff);
-              ("effect_flags", JsonList (List.map JsonStr l.eff_flags));
-              "is_simple_lemma", JsonBool l.is_simple_lemma;
-              ("mutual_with", JsonList (List.map JsonStr l.mutual_with));
-              ("name", JsonStr l.name);
-              ("premises", JsonList (List.map JsonStr l.premises));
-              ("proof_features", JsonList (List.map JsonStr l.proof_features));
-              ("type", JsonStr l.typ);
-              ("source_type", JsonStr l.source_typ);
-              ("source_definition", JsonStr l.source_def);              
-              ("prompt", JsonStr l.prompt);
-              ("expected_response", JsonStr l.expected_response);
-              ("opens_and_abbrevs", JsonList (List.map open_or_abbrev_as_json l.opens_and_abbrevs));
-              ("vconfig", (match l.vconfig with None -> JsonNull | Some vc -> vconfig_as_json vc));
-              ])
-
-
+  {
+    initial_fuel = v.initial_fuel;
+    max_fuel = v.max_fuel;
+    initial_ifuel = v.initial_ifuel;
+    max_ifuel = v.max_ifuel;
+    detail_errors = v.detail_errors;
+    detail_hint_replay = v.detail_hint_replay;
+    no_smt = v.no_smt;
+    quake_lo = v.quake_lo;
+    quake_hi = v.quake_hi;
+    quake_keep = v.quake_keep;
+    retry = v.retry;
+    smtencoding_elim_box = v.smtencoding_elim_box;
+    smtencoding_nl_arith_repr = v.smtencoding_nl_arith_repr;
+    smtencoding_l_arith_repr = v.smtencoding_l_arith_repr;
+    smtencoding_valid_intro = v.smtencoding_valid_intro;
+    smtencoding_valid_elim = v.smtencoding_valid_elim;
+    tcnorm = v.tcnorm;
+    no_plugins = v.no_plugins;
+    no_tactics = v.no_tactics;
+    z3cliopt = v.z3cliopt;
+    z3smtopt = v.z3smtopt;
+    z3refresh = v.z3refresh;
+    z3rlimit = v.z3rlimit;
+    z3rlimit_factor = v.z3rlimit_factor;
+    z3seed = v.z3seed;
+    z3version = v.z3version;
+    trivial_pre_for_unannotated_effectful_fns = v.trivial_pre_for_unannotated_effectful_fns;
+    reuse_hint_for = (match v.reuse_hint_for with | Some x -> Inl x | None -> Inr ());
+  }
 
 (* some definitions, such as those arising from metaprogramming and autogenerated
    inductive helpers such as projectors and discriminators have "dummy" as their file name.
@@ -556,11 +502,12 @@ let extract_from_parse_result_of_let_binding lid parse_result_opt
 
   | _ -> None //"not an ast fragment"
 
-let extract_opens_and_abbrevs (l:list (either open_module_or_namespace module_abbrev)) =
+let extract_opens_and_abbrevs (l:list (either open_module_or_namespace module_abbrev)):
+    list (either JH.open_ JH.abbrev_) =
   List.map 
     (function 
-     | Inl (m, _) -> Inl (Ident.string_of_lid m)
-     | Inr (m, n) -> Inr (Ident.string_of_id  m, Ident.string_of_lid n))
+     | Inl (m, _) -> Inl { JH.open_1 = Ident.string_of_lid m }
+     | Inr (m, n) -> Inr { JH.abbrev_1 = Ident.string_of_id m; JH.full_module = Ident.string_of_lid n })
     l
 
 let find_type_from_val_decl (l:Ident.lident) (decls:list sigelt)
@@ -580,45 +527,49 @@ let find_type_from_val_decl (l:Ident.lident) (decls:list sigelt)
     | _ -> None 
   
 let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt) (se:sigelt)
-  : list defs_and_premises
-  = let source_def, parse_result_opt = extract_def_and_typ_from_source_lines se.sigrng in
-    let source_typ = "<UNK>" in
+  : list JH.definition
+  = let source_definition, parse_result_opt = extract_def_and_typ_from_source_lines se.sigrng in
+    let source_type = "<UNK>" in
     let prompt = "<UNK>" in
     let expected_response = "<UNK>" in
     let opens_and_abbrevs = extract_opens_and_abbrevs se.sigopens_and_abbrevs in
-    let vconfig = se.sigopts in
+    let vconfig = match se.sigopts with | Some x -> Inl (jh_of_vconfig x) | _ -> Inr () in
+    let interleaved = BU.basename file_name <> BU.basename (Range.file_of_range se.sigrng) in
     match se.sigel with
     | Sig_declare_typ data ->
-        [{ source_range = heal_dummy_file_name file_name se.sigrng;
+        [{
+          JH.source_range = jh_of_range (heal_dummy_file_name file_name se.sigrng);
+          file_name; interleaved;
           name = Ident.string_of_lid data.lid;
-          typ = P.term_to_string data.t;
-          definition = "<DECLARETYP>";
+          type_ = P.term_to_string data.t;
+          definition1 = "<DECLARETYP>";
           premises = [];
-          eff = "" ;
-          eff_flags = []; (* if a declare typ does not have an assume qualified, then the def will show up *)
+          effect_ = "" ;
+          effect_flags = []; (* if a declare typ does not have an assume qualified, then the def will show up *)
           mutual_with = [];
           proof_features = [] ;
           is_simple_lemma = false;
-          source_typ;
-          source_def;
+          source_type;
+          source_definition;
           prompt;
           expected_response;
           opens_and_abbrevs;
           vconfig
         }]
     | Sig_assume data ->
-        [{ source_range = heal_dummy_file_name file_name se.sigrng;
+        [{ JH.source_range = jh_of_range (heal_dummy_file_name file_name se.sigrng);
+          file_name; interleaved;
           name = Ident.string_of_lid data.lid;
-          typ = P.term_to_string data.phi;
-          definition = "<ASSUME>";
+          type_ = P.term_to_string data.phi;
+          definition1 = "<ASSUME>";
           premises = [];
-          eff = "" ;
-          eff_flags = [];
+          effect_ = "" ;
+          effect_flags = [];
           mutual_with = [];
           proof_features = [] ;
           is_simple_lemma = false;
-          source_typ;
-          source_def;
+          source_type;
+          source_definition;
           prompt;
           expected_response;
           opens_and_abbrevs;
@@ -627,18 +578,19 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
     |  Sig_inductive_typ { params; t; lid; mutuals } ->
         let arr = FStar.Syntax.Util.arrow params (mk_Total t)
         in
-        [{ source_range = heal_dummy_file_name file_name se.sigrng;
+        [{ JH.source_range = jh_of_range (heal_dummy_file_name file_name se.sigrng);
+          file_name; interleaved;
           name = Ident.string_of_lid lid;
-          typ = P.term_to_string arr;
-          definition = "<INDUCTIVETYP>";
+          type_ = P.term_to_string arr;
+          definition1 = "<INDUCTIVETYP>";
           premises = [];
-          eff = "" ;
-          eff_flags = [];
+          effect_ = "" ;
+          effect_flags = [];
           mutual_with = List.map Ident.string_of_lid mutuals;
           proof_features = [] ;
           is_simple_lemma = false;
-          source_typ;
-          source_def;
+          source_type;
+          source_definition;
           prompt;
           expected_response;
           opens_and_abbrevs;
@@ -649,19 +601,20 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
         let _, comp = U.arrow_formals_comp data.t in
         let flags = U.comp_flags comp in
         let name = Ident.string_of_lid data.lid  in
-        [{ source_range = heal_dummy_file_name file_name se.sigrng;
+        [{ JH.source_range = jh_of_range (heal_dummy_file_name file_name se.sigrng);
+          file_name; interleaved;
           name = name;
-          typ = P.term_to_string data.t;
-          definition = "<DATACON>";
+          type_ = P.term_to_string data.t;
+          definition1 = "<DATACON>";
           premises = List.map Ident.string_of_lid
                               (BU.set_elements (FStar.Syntax.Free.fvars data.t));
-          eff = "" ;
-          eff_flags = [];
+          effect_ = "" ;
+          effect_flags = [];
           mutual_with = List.map Ident.string_of_lid data.mutuals ;
           proof_features = [] ;
           is_simple_lemma = false;
-          source_typ;
-          source_def;
+          source_type;
+          source_definition;
           prompt;
           expected_response;
           opens_and_abbrevs;
@@ -688,7 +641,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
         let _, comp = U.arrow_formals_comp lb.lbtyp in
         let flags = U.comp_flags comp in
         let name = lbname_to_string lb.lbname in
-        let source_typ, prompt, expected_response =
+        let source_type, prompt, expected_response =
           let Inr fv = lb.lbname in
           let st_opt = extract_from_parse_result_of_let_binding (FStar.Syntax.Syntax.lid_of_fv fv) parse_result_opt in
           let st_opt =
@@ -697,7 +650,7 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
               match st_opt with
               | None -> None
               | Some (Some p, q, r) -> Some (p, q, r)
-              | Some (None, q, r) -> Some (source_typ, q, r)
+              | Some (None, q, r) -> Some (source_type, q, r)
             )
             | Some p ->
               match st_opt with
@@ -705,21 +658,22 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
               | Some (_, prompt, expected_response) ->
                 Some (p, prompt, expected_response)
           in
-          BU.dflt (source_typ, prompt, expected_response) st_opt
+          BU.dflt (source_type, prompt, expected_response) st_opt
         in
-        { source_range = heal_dummy_file_name file_name lb.lbpos;
+        { JH.source_range = jh_of_range (heal_dummy_file_name file_name se.sigrng);
+          file_name; interleaved;
           name;
-          typ = P.term_to_string lb.lbtyp;
-          definition = P.term_to_string lb.lbdef;
+          type_ = P.term_to_string lb.lbtyp;
+          definition1 = P.term_to_string lb.lbdef;
           premises = List.map Ident.string_of_lid
                               (BU.set_elements (FStar.Syntax.Free.fvars lb.lbdef));
-          eff = Ident.string_of_lid (U.comp_effect_name comp);
-          eff_flags = List.map P.cflag_to_string flags;
+          effect_ = Ident.string_of_lid (U.comp_effect_name comp);
+          effect_flags = List.map P.cflag_to_string flags;
           is_simple_lemma = is_simple_lemma se;
           mutual_with;
           proof_features = maybe_rec;
-          source_typ;
-          source_def;
+          source_type;
+          source_definition;
           prompt;
           expected_response;
           opens_and_abbrevs;
@@ -727,42 +681,6 @@ let rec functions_called_by_user_in_def (file_name : string) (modul:list sigelt)
         })
         lbs
     | _ -> []
-
-let dependences_of_definition (source_file:string) (name:string)
-  : list string & list sigelt
-  = print_stderr "Loading deps of %s:%s\n" [source_file; name];
-    let cfc =
-        match read_checked_file source_file with
-        | None ->
-          print_stderr "Could not find checked file for %s\n" [source_file];
-          exit 1
-        | Some (_cfc_path, cfc) -> cfc
-    in
-    let name = Ident.lid_of_str name in
-    let module_deps = load_dependences cfc in
-    let rec prefix_until_name out ses =
-      match ses with
-      | [] -> [], List.rev out
-      | se :: ses -> (
-        match se.sigel with
-        | Sig_let { lids = names } ->
-          if BU.for_some (Ident.lid_equals name) names
-          then List.collect (fun l -> l.premises) 
-                            (functions_called_by_user_in_def source_file cfc.m.declarations se),
-               List.rev out //found it
-          else prefix_until_name (se :: out) ses
-        | _ ->
-          prefix_until_name (se :: out) ses
-      )
-    in
-    let ses = List.collect (fun cfc -> cfc.m.declarations) module_deps in
-    let user_called_lemmas, local_deps = prefix_until_name [] cfc.m.declarations in
-    user_called_lemmas, local_deps @ ses
-
-let filter_sigelts (ses:list sigelt) =
-  List.filter
-    (fun se -> is_sigelt_tot se || is_sigelt_ghost se || is_sigelt_lemma se)
-    ses
 
 let read_module_sigelts (source_file:string) : list sigelt =
   try
@@ -780,35 +698,25 @@ let read_module_sigelts (source_file:string) : list sigelt =
       exit 1
 
 let find_defs_and_premises (source_file:string)
-  : list defs_and_premises =
+  : list JH.definition =
   let sigelts = read_module_sigelts source_file in
   List.collect (functions_called_by_user_in_def source_file sigelts) sigelts
 
-let dep_as_json (se:sigelt)
-  : list json
-  = let rng = range_as_json_list se.sigrng in
-    let with_name lid = JsonAssoc (["name", JsonStr (Ident.string_of_lid lid)]@rng) in
-    match se.sigel with
-    | Sig_let { lids=names } -> List.map with_name names
-    | Sig_declare_typ { lid=name; t } -> [with_name name]
-    | _ -> []
-
 let dump_all_lemma_premises_as_json (source_file:string)
-  = List.map (defs_and_premises_as_json source_file) (find_defs_and_premises source_file)
+  = find_defs_and_premises source_file
 
 (* prefer an `fsti` over an `fst` *)
-let dump_dependency_info_as_json (source_file:string)
+let dump_dependency_info_as_json (source_file:string) : JH.dependency
   =
     match read_checked_file source_file with
     | None -> exit 1
-    | Some (cfc_path, cfc) ->
-        [JsonAssoc [("source_file", JsonStr source_file);
-                    ("checked_file", JsonStr cfc_path);
-                    ("dependencies", JsonList (
-                          List.map
-                             (fun dep -> JsonStr (BU.dflt ("<UNK>:"^dep) (BU.bind_opt (map_file_name dep (is_friend cfc dep)) find_file_in_path)))
-                             (List.tail cfc.deps)));
-                    ("depinfo", JsonBool true)]] (* tag that this is dependency information. Poor man's sum type *)
+    | Some (cfc_path, cfc) -> {
+      source_file = source_file;
+      checked_file = cfc_path;
+      dependencies1 = List.map
+        (fun dep -> BU.dflt ("<UNK>:"^dep) (BU.bind_opt (map_file_name dep (is_friend cfc dep)) find_file_in_path))
+        (List.tail cfc.deps);
+    }
 
 // Same as in FStar.CheckedFiles
 type checked_file_entry_stage1 = {
@@ -821,8 +729,7 @@ type checked_file_entry_stage2 = {
   tc_res: tc_result;
 }
 
-let print_checked_deps (filenames : list string) =
-  match filenames with | [filename] ->
+let print_checked_deps (filename : string) =
   let entry : option (checked_file_entry_stage1 * checked_file_entry_stage2) = BU.load_2values_from_file filename in
   match entry with | Some ((s1,s2)) ->
   let json_of_digest (digest : string) =
@@ -837,8 +744,7 @@ let print_checked_deps (filenames : list string) =
     "deps_digest", JsonList (List.map json_of_dep s2.deps_dig);
   ]))
 
-let print_digest (filenames : list string) =
-  match filenames with | [filename] ->
+let print_digest (filename : string) =
   BU.print_string (BU.base64_encode (BU.digest_of_file filename))
 
 let main () =
@@ -847,16 +753,18 @@ let main () =
   in
   let filenames = BU.mk_ref [] in
   let res = FStar.Getopt.parse_cmdline options (fun s -> filenames :=  s::!filenames; Getopt.Success) in
-  match res with
-  | Getopt.Success ->
-    let files = !filenames in
+  match !filenames, res with
+  | [filename], Getopt.Success ->
     if !all_defs_and_premises
     then
-      let lemmas_premises = List.concatMap dump_all_lemma_premises_as_json files in
-      let deps = List.concatMap dump_dependency_info_as_json files in
-      BU.print_string (string_of_json (JsonAssoc [("defs", JsonList lemmas_premises); ("dependencies", JsonList deps)]))
-    else if !print_checked_deps_flag then print_checked_deps !filenames
-    else if !digest_flag then print_digest !filenames
+      let lemmas_premises = dump_all_lemma_premises_as_json filename in
+      let deps = dump_dependency_info_as_json filename in
+      BU.print_string (string_of_json (JH.json_of_insightfilefirstpass {
+        defs = lemmas_premises;
+        dependencies = deps;
+      }))
+    else if !print_checked_deps_flag then print_checked_deps filename
+    else if !digest_flag then print_digest filename
     else (usage (); exit 1)
   | _ ->
     usage();
