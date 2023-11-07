@@ -105,7 +105,7 @@ class FStarIdeProcess:
     pushed_until_lid: Optional[str] = None
 
     def __init__(self, args: list[str]):
-        self.process = subprocess.Popen(
+        self.process: Any = subprocess.Popen(
             args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             # stderr=subprocess.PIPE,
             encoding='UTF-8')
@@ -344,7 +344,7 @@ def build_scaffolding(entry: Definition):
     for key, value in (entry["vconfig"] or {}).items():
         match key:
             case "z3cliopt" | "z3smtopt":
-                for val in value:
+                for val in cast(list[str], value):
                     options.append('--' + key)
                     options.append(f"'{val}'")
                 continue
