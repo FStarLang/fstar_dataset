@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import TypedDict, Any, Optional, Callable, Iterable, Union
+from typing import TypedDict, Any, Optional, Callable, Iterable, Union, cast
 import subprocess
 import json
 import sys
@@ -60,25 +60,27 @@ class Range(TypedDict):
     end_line: int
     end_col: int
 
-class Definition(TypedDict):
-    file_name: str # The filename where the definition logically appears (after interleaving)
+class DefinitionToCheck(TypedDict):
+    file_name: str # Filename where the definition logically appears (after interleaving)
+    name: str # Fully-qualified name
+    opens_and_abbrevs: list[OpenOrAbbrev]
+    vconfig: Optional[Vconfig]
+    source_type: str # val block
+    source_definition: str # let block
+
+class Definition(DefinitionToCheck):
     source_range: Range # The range where the definition's source code is located
     interleaved: bool # True if this definition was copied from the fsti file
     definition: str
     effect: str
     effect_flags: list[str]
     mutual_with: list[str]
-    name: str
     premises: list[str]
     proof_features: list[str]
     is_simple_lemma: bool
     type: str
-    source_type: str
-    source_definition: str
     prompt: str
     expected_response: str
-    opens_and_abbrevs: list[OpenOrAbbrev]
-    vconfig: Optional[Vconfig]
 
 class Source(TypedDict):
     # Git repository name, e.g. `hacl-star`
@@ -188,7 +190,7 @@ Warning_WarnOnUse = 335
 
 from dataclasses import dataclass
 
-PoolTask = Definition
+PoolTask = DefinitionToCheck
 
 @dataclass
 class TodoItem:
@@ -322,7 +324,7 @@ class FStarPool:
         for _ in range(len(tasks)):
             yield q.get()
 
-def build_scaffolding(entry: Definition):
+def build_scaffolding(entry: DefinitionToCheck):
     scaffolding = ''
 
     module_name = os.path.splitext(os.path.basename(entry["file_name"]))[0]
@@ -403,7 +405,7 @@ def build_scaffolding(entry: Definition):
     scaffolding += f"#push-options \"{options_string}\"\n"
     return scaffolding
 
-def process_one_instance(entry: Definition, fstar_process: FStarIdeProcess):
+def process_one_instance(entry: DefinitionToCheck, fstar_process: FStarIdeProcess):
     scaffolding = build_scaffolding(entry)
     lemma_long_name = entry["name"]
     goal = entry["source_type"]
