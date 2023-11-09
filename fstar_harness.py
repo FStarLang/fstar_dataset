@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import TypedDict, Any, Optional, Callable, Iterable, Union, cast
+from typing import Generic, Literal, NotRequired, TypeVar, TypedDict, Any, Optional, Callable, Iterable, Union, cast
 import subprocess
 import json
 import sys
@@ -104,6 +104,36 @@ def eprint(msg):
     sys.stderr.write(str(msg) + '\n')
     sys.stderr.flush()
 
+T = TypeVar('T')
+class IdeResponse(TypedDict('Detail', {'query-id': str}), Generic[T]):
+    kind: str
+    status: str
+    response: T
+
+IssueLevel = Literal['error', 'warning', 'info', 'not-implemented']
+
+IssuePos = tuple[int, int]
+
+class IssueRange(TypedDict):
+    fname: str
+    beg: IssuePos
+    end: IssuePos
+
+class Issue(TypedDict):
+    level: IssueLevel
+    number: NotRequired[int]
+    message: str
+    ranges: list[IssueRange]
+
+PushResponse = IdeResponse[list[Issue]]
+
+class Result(TypedDict):
+    name: str
+    goal_statement: Optional[str]
+    full_solution: Optional[str]
+    result: bool
+    detail: Optional[PushResponse]
+
 class FStarIdeProcess:
     pushed_until_lid: Optional[str] = None
 
@@ -147,7 +177,7 @@ class FStarIdeProcess:
         self.qid += 1
         return str(self.qid)
 
-    def call_simple(self, query: str, args: Any):
+    def call_simple(self, query: str, args: Any) -> IdeResponse[Any]:
         qid = self._next_qid()
         self._write_msg({'query-id': qid, 'query': query, 'args': args})
         while True:
@@ -177,7 +207,7 @@ class FStarIdeProcess:
         self.call_checked('push-partial-checked-file', {'until-lid': until_lid})
         self.pushed_until_lid = until_lid
 
-    def check_snippet_at_decl(self, decl_name: str, snippet: str) -> tuple[bool, Any]:
+    def check_snippet_at_decl(self, decl_name: str, snippet: str) -> tuple[bool, PushResponse]:
         self.load_partial_checked_until(decl_name)
         res = self.call_simple('push', {'kind': 'full', 'line': 0, 'column': 0, 'code': snippet})
         if res['status'] == 'success':
@@ -196,7 +226,7 @@ PoolTask = DefinitionToCheck
 @dataclass
 class TodoItem:
     task: PoolTask
-    on_done: Callable[[Any], None]
+    on_done: Callable[[Result], None]
 
     @property
     def file(self):
@@ -303,7 +333,13 @@ class FStarPool:
             except BaseException as e:
                 proc = None
                 cur_file = None
-                item.on_done(None)
+                item.on_done({
+                    'name': item.defn,
+                    'result': False,
+                    'detail': None,
+                    'goal_statement': None,
+                    'full_solution': None,
+                })
 
     def _enqueue(self, item: TodoItem):
         item_file = item.file
@@ -317,13 +353,27 @@ class FStarPool:
                 self._enqueue(item)
             self.cv.notify_all() # TODO: try to wake up workers with same file first
 
-    def process_instances_unordered(self, tasks: list[PoolTask]) -> Iterable[tuple[PoolTask, Optional[Any]]]:
+    def process_instances_unordered_enumerated(self, tasks: list[PoolTask]) -> Iterable[tuple[int, Result]]:
         q = queue.SimpleQueue()
-        def mk_item(task: PoolTask) -> TodoItem:
-            return TodoItem(on_done = lambda res: q.put((task, res)), task=task)
-        self._submit(mk_item(task) for task in tasks)
+        def mk_item(i: int, task: PoolTask) -> TodoItem:
+            return TodoItem(on_done = lambda res: q.put((i, res)), task=task)
+        self._submit(mk_item(i, task) for i, task in enumerate(tasks))
         for _ in range(len(tasks)):
             yield q.get()
+
+    def process_instances_unordered(self, tasks: list[PoolTask]) -> Iterable[Result]:
+        for _, r in self.process_instances_unordered_enumerated(tasks):
+            yield r
+
+    def process_instances(self, tasks: list[PoolTask], progressbar=False) -> list[Result]:
+        result: list = [None] * len(tasks)
+        stream = self.process_instances_unordered_enumerated(tasks)
+        if progressbar:
+            from tqdm import tqdm
+            stream = tqdm(stream, total=len(tasks))
+        for i, r in stream:
+            result[i] = r
+        return result
 
 def build_scaffolding(entry: DefinitionToCheck):
     scaffolding = ''
@@ -406,24 +456,22 @@ def build_scaffolding(entry: DefinitionToCheck):
     scaffolding += f"#push-options \"{options_string}\"\n"
     return scaffolding
 
-def process_one_instance(entry: DefinitionToCheck, fstar_process: FStarIdeProcess):
+def process_one_instance(entry: DefinitionToCheck, fstar_process: FStarIdeProcess) -> Result:
     scaffolding = build_scaffolding(entry)
     lemma_long_name = entry["name"]
     goal = entry["source_type"]
     if goal == "<UNK>" :
         goal = ""
-    # NS: Here's where you should plug in a LLM-generated solution instead
     solution = entry["source_definition"]
     full_soln= f"{scaffolding}\n{goal}\n{solution}"
     result, detail = fstar_process.check_snippet_at_decl(entry['name'], full_soln)
-    # the detail field contains the actual feedback, error report etc. from F* in case result==false
-    logged_solution = { "name": lemma_long_name,
-                        "goal_statement":goal,
-                        "full_solution": full_soln,
-                        "result": result,
-                        "detail": detail }
-    # append the logged solution to the json file as a json array
-    return logged_solution
+    return {
+        "name": lemma_long_name,
+        "goal_statement": goal,
+        "full_solution": full_soln,
+        "result": result,
+        "detail": detail,
+    }
 
 def should_ignore(entry: Definition) -> Optional[str]:
     if entry['interleaved']:
@@ -478,8 +526,6 @@ def pool_tasks_of_file(json_data: InsightFile, warn=False) -> list[PoolTask]:
     return items
 
 if __name__ == '__main__':
-    import tqdm
-
     if len(sys.argv) < 2:
         sys.stderr.write('Usage: python3 fstar_harness.py dir/dataset Input.File1.json Input.File2.json ...\n')
         exit(1)
@@ -496,6 +542,6 @@ if __name__ == '__main__':
         # '--debug_level', 'Rel,RelCheck,High',
     ]
     with FStarPool(dataset_dir, extra_args) as pool:
-        outputs = [ res[1] for res in tqdm.tqdm(pool.process_instances_unordered(tasks), total=len(tasks)) ]
+        outputs = pool.process_instances(tasks, progressbar=True)
     json.dump(outputs, sys.stdout)
     sys.stdout.write('\n')
