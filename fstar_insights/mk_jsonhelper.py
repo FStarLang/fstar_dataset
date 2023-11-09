@@ -40,13 +40,13 @@ def process_type(ty: PyType) -> PTRes:
         if ty.__origin__ == list:
             arg = process_type(ty.__args__[0])
             return PTRes(fstar_type=f'(list {arg.fstar_type})', to_json=f'(fun xs -> JsonList (List.Tot.map ({arg.to_json}) xs))')
+        if ty.__origin__ == Union and len(ty.__args__) == 2 and ty.__args__[1] == type(None):
+            arg = process_type(ty.__args__[0])
+            return PTRes(fstar_type=f'(option {arg.fstar_type})', to_json=f'(fun x -> match x with | Some x -> {arg.to_json} x | None -> JsonNull)')
         if ty.__origin__ == Union:
             arg1, arg2 = map(process_type, ty.__args__) # TODO: more
             return PTRes(fstar_type=f'(either {arg1.fstar_type} {arg2.fstar_type})',
                 to_json=f'(fun x -> match x with | Inl x -> {arg1.to_json} x | Inr x -> {arg2.to_json} x)')
-        # if ty.__origin__ == Optional:
-        #     arg = process_type(ty.__args__[0])
-        #     return PTRes(fstar_type=f'(option {arg.fstar_type})', to_json=f'(fun x -> match x with | Some x -> {arg.to_json} x | None -> JsonNull)')
         if ty.__origin__ == tuple:
             args = list(map(process_type, ty.__args__))
             fst_ty = '(' + ' * '.join(a.fstar_type for a in args) + ')'
