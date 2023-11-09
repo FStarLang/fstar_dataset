@@ -752,11 +752,11 @@ let dump_dependency_info_as_json (source_file: string) : JH.dependency =
     {
       source_file = source_file;
       checked_file = cfc_path;
+      interface_file = List.contains "interface" cfc.deps;
       dependencies1
       =
-      List.map (fun dep ->
-            BU.dflt ("<UNK>:" ^ dep)
-              (BU.bind_opt (map_file_name dep (is_friend cfc dep)) find_file_in_path))
+      List.filter_map (fun dep ->
+            BU.bind_opt (map_file_name dep (is_friend cfc dep)) find_file_in_path)
         (List.tail cfc.deps)
     }
 

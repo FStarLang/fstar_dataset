@@ -12,6 +12,7 @@ import queue
 class Dependency(TypedDict):
     source_file: str
     checked_file: str
+    interface_file: bool # Whether the file depends on its interface file
     dependencies: list[str]
 
 class Open(TypedDict):
