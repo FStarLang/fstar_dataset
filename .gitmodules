@@ -1,0 +1,24 @@
+[submodule "projects/FStar"]
+	path = projects/FStar
+	url = https://github.com/FStarLang/FStar.git
+[submodule "projects/everparse"]
+	path = projects/everparse
+	url = https://github.com/project-everest/everparse.git
+[submodule "projects/karamel"]
+	path = projects/karamel
+	url = https://github.com/FStarLang/karamel.git
+[submodule "projects/hacl-star"]
+	path = projects/hacl-star
+	url = https://github.com/project-everest/hacl-star.git
+[submodule "projects/merkle-tree"]
+	path = projects/merkle-tree
+	url = https://github.com/hacl-star/merkle-tree.git
+[submodule "projects/everquic-crypto"]
+	path = projects/everquic-crypto
+	url = https://github.com/project-everest/everquic-crypto.git
+[submodule "projects/mitls-fstar"]
+	path = projects/mitls-fstar
+	url = https://github.com/project-everest/mitls-fstar.git
+[submodule "projects/steel"]
+	path = projects/steel
+	url = https://github.com/FStarLang/steel.git
