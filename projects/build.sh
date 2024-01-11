@@ -40,6 +40,7 @@ build() {
   (cd everquic-crypto; make $MAKEOPTS)
   (cd merkle-tree; make $MAKEOPTS)
   (cd mitls-fstar; make $MAKEOPTS -C src/tls model-all)
+  (cd Armada; make $MAKEOPTS -C experimental/lib)
 }
 
 check_z3

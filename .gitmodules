@@ -22,3 +22,6 @@
 [submodule "projects/steel"]
 	path = projects/steel
 	url = https://github.com/FStarLang/steel.git
+[submodule "projects/Armada"]
+	path = projects/Armada
+	url = https://github.com/gebner/Armada.git
