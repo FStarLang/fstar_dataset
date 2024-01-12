@@ -32,7 +32,7 @@ build() {
   eval $(fstar_env)
   cd "$PROJECTS_HOME"
   set -x
-  (cd FStar; make $MAKEOPTS)
+  (cd FStar; make $MAKEOPTS; make $MAKEOPTS boot)
   (cd steel; make $MAKEOPTS)
   (cd karamel; make $MAKEOPTS)
   (cd everparse; make $MAKEOPTS)

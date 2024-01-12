@@ -11,6 +11,7 @@ open FStar.Compiler
 open FStar.Compiler.Effect
 open FStar.CheckedFiles
 open FStar.Compiler.List
+module Set = FStar.Compiler.Set
 module BU = FStar.Compiler.Util
 module SMT = FStar.SMTEncoding.Solver
 module TcEnv = FStar.TypeChecker.Env
@@ -33,16 +34,18 @@ let set_all_defs_and_premises () = all_defs_and_premises := true
 let options:list FStar.Getopt.opt =
   let open FStar.Getopt in
   [
-    (noshort, "include", OneArg (add_include, "include"), "include path");
+    // include path
+    (noshort, "include", OneArg (add_include, "include"));
+    // scan a file for all definitions, dump their names, defs, types, premises, etc. as json
     (noshort,
       "all_defs_and_premises",
-      ZeroArgs set_all_defs_and_premises,
-      "scan a file for all definitions, dump their names, defs, types, premises, etc. as json");
+      ZeroArgs set_all_defs_and_premises);
+    // dump info from checked file
     (noshort,
       "print_checked_deps",
-      ZeroArgs (fun _ -> print_checked_deps_flag := true),
-      "dump info from checked file");
-    (noshort, "digest", ZeroArgs (fun _ -> digest_flag := true), "print digest of file")
+      ZeroArgs (fun _ -> print_checked_deps_flag := true));
+    // print digest of file
+    (noshort, "digest", ZeroArgs (fun _ -> digest_flag := true));
   ]
 
 let load_file_names () =
@@ -644,7 +647,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         name = name;
         type_ = P.term_to_string data.t;
         definition1 = "<DATACON>";
-        premises = List.map Ident.string_of_lid (BU.set_elements (FStar.Syntax.Free.fvars data.t));
+        premises = List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars data.t));
         effect_ = "";
         effect_flags = [];
         mutual_with = List.map Ident.string_of_lid data.mutuals;
@@ -707,7 +710,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
             definition1 = P.term_to_string lb.lbdef;
             premises
             =
-            List.map Ident.string_of_lid (BU.set_elements (FStar.Syntax.Free.fvars lb.lbdef));
+            List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars lb.lbdef));
             effect_ = Ident.string_of_lid (U.comp_effect_name comp);
             effect_flags = List.map P.cflag_to_string flags;
             is_simple_lemma = is_simple_lemma se;
