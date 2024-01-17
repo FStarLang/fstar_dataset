@@ -24,4 +24,4 @@
 	url = https://github.com/FStarLang/steel.git
 [submodule "projects/Armada"]
 	path = projects/Armada
-	url = https://github.com/gebner/Armada.git
+	url = https://github.com/microsoft/Armada.git
