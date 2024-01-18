@@ -53,10 +53,13 @@ def main():
 
     pool = multiprocessing.Pool()
 
-    fns = [ fn for dir in dirs for fn in glob.iglob(f'{dir}/**/*.fst*.checked', recursive=True, include_hidden=True) if not os.path.isdir(fn) ]
-    checked_deps = tqdm.tqdm(pool.imap_unordered(run_print_checked_deps, fns), total=len(fns), desc='Parsing checked files')
-    checked_deps = { dig: (fn, j) for fn, j, dig in checked_deps }
-    expected_source_fns = set(os.path.splitext(os.path.basename(fn))[0] for fn, _ in checked_deps.values())
+    fns = [ fn for dir in dirs for fn in glob.iglob(f'{dir}/**/*.fst*.checked', recursive=True, include_hidden=True) if not os.path.isdir(fn) and os.path.getsize(fn) > 0 ]
+    checked_deps = list(tqdm.tqdm(pool.imap_unordered(run_print_checked_deps, fns), total=len(fns), desc='Parsing checked files'))
+    dig2checked: dict[str, list[tuple[str, Any]]] = {}
+    for fn, j, dig in checked_deps:
+        if dig not in dig2checked: dig2checked[dig] = []
+        dig2checked[dig].append((fn, j))
+    expected_source_fns = set(os.path.splitext(os.path.basename(fn))[0] for fn, _, _ in checked_deps)
 
     fns = [ fn for dir in dirs for fn in glob.iglob(f'{dir}/**/*.fst*', recursive=True, include_hidden=True) \
         if not os.path.isdir(fn) and os.path.basename(fn) in expected_source_fns ]
@@ -69,40 +72,43 @@ def main():
     basename2files: dict[str, tuple[str, str]] = {}
     @cache
     def resolve_checked(dig: str) -> bool:
-        if dig not in checked_deps: return False
-        checked_fn, dep_info = checked_deps[dig]
-        basename = os.path.splitext(os.path.basename(checked_fn))[0]
-        if basename.startswith('Test.fst'):
-            print(f'Skipping {checked_fn} because name causes lots of shadowing')
-            return False
-        if 'tls/cache/Karamel' in checked_fn:
-            print(f'Skipping {checked_fn} because module name clashes with the Model variant')
-            return False
-        if basename in basename2files:
-            print(f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}')
-            return False
-        src_fn = None
-        for src_fn_cand in digest2src.get(dep_info['source_digest'], []):
-            if os.path.basename(src_fn_cand) == basename:
-                src_fn = src_fn_cand
-                break
-        if src_fn is None:
-            print(f'Skipping {checked_fn} because of unavailable source file')
-            return False
-        for dep in dep_info['deps_digest']:
-            if dep['module_name'] == 'source':
-                assert dep['digest'] == dep_info['source_digest'] # duplicate info
-            else:
-                if not resolve_checked(dep['digest']):
-                    print(f'Skipping {checked_fn} because of unavailable dependency {dep["module_name"]}')
-                    return False
-        if basename in basename2files:
-            print(f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}')
-            return False
-        basename2files[basename] = (checked_fn, src_fn)
-        return True
+        if dig not in dig2checked: return False
+        error = None
+        for checked_fn, dep_info in dig2checked[dig]:
+            basename = os.path.splitext(os.path.basename(checked_fn))[0]
+            if 'tls/cache/Karamel' in checked_fn:
+                error = f'Skipping {checked_fn} because module name clashes with the Model variant'
+                continue
+            if basename.startswith('Test.fst'):
+                error = f'Skipping {checked_fn} because name causes lots of shadowing'
+                continue
+            if basename in basename2files:
+                error = f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}'
+                continue
+            src_fn = None
+            for src_fn_cand in digest2src.get(dep_info['source_digest'], []):
+                if os.path.basename(src_fn_cand) == basename:
+                    src_fn = src_fn_cand
+                    break
+            if src_fn is None:
+                error = f'Skipping {checked_fn} because of unavailable source file {basename}'
+                continue
+            for dep in dep_info['deps_digest']:
+                if dep['module_name'] == 'source':
+                    assert dep['digest'] == dep_info['source_digest'] # duplicate info
+                else:
+                    if not resolve_checked(dep['digest']):
+                        error = f'Skipping {checked_fn} because of unavailable dependency {dep["module_name"]}'
+                        continue
+            if basename in basename2files:
+                error = f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}'
+                continue
+            basename2files[basename] = (checked_fn, src_fn)
+            return True
+        print(error)
+        return False
 
-    for dig in checked_deps.keys(): resolve_checked(dig)
+    for dig in dig2checked.keys(): resolve_checked(dig)
 
     for checked_fn, src_fn in tqdm.tqdm(basename2files.values(), desc = 'Copying files'):
         shutil.copy(src_fn, 'dataset/')
