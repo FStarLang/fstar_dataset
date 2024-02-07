@@ -92,6 +92,19 @@ let is_lemma_arrow (t: typ) =
   let _, comp = U.arrow_formals_comp_ln t in
   Ident.lid_equals (U.comp_effect_name comp) (FStar.Parser.Const.effect_Lemma_lid)
 
+let is_div_typ (t: typ) =
+  let _, comp = U.arrow_formals_comp_ln t in
+  U.is_div_effect (U.comp_effect_name comp) || U.is_ml_comp comp
+
+(* has Lemma effect / return type is literally squash *)
+let rec is_propish (t : typ) =
+  let bs, comp = U.arrow_formals_comp_ln t in
+  let n, r, a = U.comp_eff_name_res_and_args comp in
+  Ident.lid_equals n Parser.Const.effect_Lemma_lid
+    || Some? (U.is_squash r)
+    (* TODO(gabriel): it would be cool to check whether the type has type prop, but we don't load the dependencies yet *)
+    || (bs <> [] && is_propish r)
+
 let is_simple_definition (t: term) : ML bool =
   let t = U.unascribe t in
   let _, body, _ = U.abs_formals_maybe_unascribe_body true t in
@@ -134,18 +147,6 @@ let is_simple_lemma (se: sigelt) =
   | Sig_let { lbs = false, [lb] ; lids = [name] } ->
     is_lemma_arrow lb.lbtyp && is_simple_definition lb.lbdef
   | _ -> false
-
-let check_type (se: sigelt) (f: (typ -> bool)) =
-  match se.sigel with
-  | Sig_let { lbs = _, lbs } -> BU.for_all (fun lb -> f lb.lbtyp) lbs
-  | Sig_declare_typ { t = t } -> f t
-  | _ -> false
-
-let is_sigelt_tot (se: sigelt) = check_type se is_tot_arrow
-
-let is_sigelt_ghost (se: sigelt) = check_type se is_gtot_arrow
-
-let is_sigelt_lemma (se: sigelt) = check_type se is_lemma_arrow
 
 type checked_file_content = {
   friends:list string;
@@ -579,6 +580,8 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         mutual_with = [];
         proof_features = [];
         is_simple_lemma = false;
+        is_div = is_div_typ data.t;
+        is_proof = is_propish data.t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -602,6 +605,8 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         mutual_with = [];
         proof_features = [];
         is_simple_lemma = false;
+        is_div = is_div_typ data.phi;
+        is_proof = is_propish data.phi;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -626,6 +631,8 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         mutual_with = List.map Ident.string_of_lid mutuals;
         proof_features = [];
         is_simple_lemma = false;
+        is_div = is_div_typ t;
+        is_proof = is_propish t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -653,6 +660,8 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         mutual_with = List.map Ident.string_of_lid data.mutuals;
         proof_features = [];
         is_simple_lemma = false;
+        is_div = is_div_typ data.t;
+        is_proof = is_propish data.t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -714,6 +723,8 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
             effect_ = Ident.string_of_lid (U.comp_effect_name comp);
             effect_flags = List.map P.cflag_to_string flags;
             is_simple_lemma = is_simple_lemma se;
+            is_div = is_div_typ lb.lbtyp;
+            is_proof = is_propish lb.lbtyp;
             mutual_with = mutual_with;
             proof_features = maybe_rec;
             source_type = source_type;

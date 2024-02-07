@@ -16,7 +16,7 @@ while len(opts) > 0:
     opt = opts.pop()
     if opt == '--include':
         includes.append(opts.pop())
-    elif not 'lax' in opt:
+    else:
         new_opts.append(opt)
 
 print(json.dumps({

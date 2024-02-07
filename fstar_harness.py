@@ -79,6 +79,8 @@ class Definition(DefinitionToCheck):
     premises: list[str]
     proof_features: list[str]
     is_simple_lemma: bool
+    is_div: bool # ML/Div (i.e., allows general recursion)
+    is_proof: bool # Whether the type is a prop / squash / has the Lemma effect
     type: str
     prompt: str
     expected_response: str
