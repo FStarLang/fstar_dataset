@@ -94,7 +94,7 @@ let is_lemma_arrow (t: typ) =
 
 let is_div_typ (t: typ) =
   let _, comp = U.arrow_formals_comp_ln t in
-  U.is_div_effect (U.comp_effect_name comp) || U.is_ml_comp comp
+  not (U.is_total_comp comp || U.is_pure_or_ghost_comp comp)
 
 (* has Lemma effect / return type is literally squash *)
 let rec is_propish (t : typ) =
