@@ -105,6 +105,30 @@ let rec is_propish (t : typ) =
     (* TODO(gabriel): it would be cool to check whether the type has type prop, but we don't load the dependencies yet *)
     || (bs <> [] && is_propish r)
 
+let rec is_simple_type (t: typ) =
+  let bs, comp = U.arrow_formals_comp t in
+  let rec all_simple_types = function
+    | [] -> true
+    | b::bs -> is_simple_type b.binder_bv.sort && all_simple_types bs in
+  let rec is_fv t =
+    match (SS.compress t).n with
+    | Tm_uinst (t, _) -> is_fv t
+    | Tm_fvar _ -> true
+    | _ -> false in
+  let r = U.comp_result comp in
+  U.is_total_comp comp && all_simple_types bs &&
+    (is_fv r || // Assume that referenced fvars have simple types
+      (match (SS.compress r).n with
+      | Tm_type _ -> true
+      | Tm_bvar {sort} -> (match (SS.compress sort).n with | Tm_type _ -> true | _ -> false)
+      | Tm_app {hd; args} ->
+        let rec all_simple_types = function
+          | [] -> true
+          | b::bs -> is_simple_type (fst b) && all_simple_types bs in
+        is_fv hd // Assume that referenced fvars have simple types
+          && all_simple_types args
+      | _ -> false))
+
 let is_simple_definition (t: term) : ML bool =
   let t = U.unascribe t in
   let _, body, _ = U.abs_formals_maybe_unascribe_body true t in
@@ -582,6 +606,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_simple_lemma = false;
         is_div = is_div_typ data.t;
         is_proof = is_propish data.t;
+        is_simply_typed = is_simple_type data.t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -607,6 +632,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_simple_lemma = false;
         is_div = is_div_typ data.phi;
         is_proof = is_propish data.phi;
+        is_simply_typed = is_simple_type data.phi;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -633,6 +659,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_simple_lemma = false;
         is_div = is_div_typ t;
         is_proof = is_propish t;
+        is_simply_typed = is_simple_type t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -662,6 +689,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_simple_lemma = false;
         is_div = is_div_typ data.t;
         is_proof = is_propish data.t;
+        is_simply_typed = is_simple_type data.t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -725,6 +753,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
             is_simple_lemma = is_simple_lemma se;
             is_div = is_div_typ lb.lbtyp;
             is_proof = is_propish lb.lbtyp;
+            is_simply_typed = is_simple_type lb.lbtyp;
             mutual_with = mutual_with;
             proof_features = maybe_rec;
             source_type = source_type;

@@ -81,6 +81,7 @@ class Definition(DefinitionToCheck):
     is_simple_lemma: bool
     is_div: bool # ML/Div (i.e., allows general recursion)
     is_proof: bool # Whether the type is a prop / squash / has the Lemma effect
+    is_simply_typed: bool # Whether the type is polymorphically simply typed (e.g. `t:Type -> list t -> nat`)
     type: str
     prompt: str
     expected_response: str
