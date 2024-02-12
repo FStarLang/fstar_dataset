@@ -12,7 +12,7 @@
 	url = https://github.com/project-everest/hacl-star.git
 [submodule "projects/merkle-tree"]
 	path = projects/merkle-tree
-	url = https://github.com/hacl-star/merkle-tree.git
+	url = https://github.com/gebner/merkle-tree.git
 [submodule "projects/everquic-crypto"]
 	path = projects/everquic-crypto
 	url = https://github.com/project-everest/everquic-crypto.git

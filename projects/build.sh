@@ -32,7 +32,11 @@ build() {
   eval $(fstar_env)
   cd "$PROJECTS_HOME"
   set -x
-  (cd FStar; make $MAKEOPTS; make $MAKEOPTS boot)
+  (cd FStar
+    make $MAKEOPTS
+    make $MAKEOPTS boot
+    touch -r ocaml/_build/default/fstar/main.exe bin/fstar.exe # prevent useless rebuilds in HACL*
+    )
   (cd steel; make $MAKEOPTS)
   (cd karamel; make $MAKEOPTS)
   (cd everparse; make $MAKEOPTS)
