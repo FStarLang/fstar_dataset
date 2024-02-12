@@ -38,7 +38,7 @@ build() {
     make $MAKEOPTS boot
     touch -r ocaml/_build/default/fstar/main.exe bin/fstar.exe # prevent useless rebuilds in HACL*
     )
-  (cd steel; make $MAKEOPTS)
+  (cd steel; make $MAKEOPTS test)
   (cd karamel; make $MAKEOPTS)
   (cd FStar; make $MAKEOPTS -C examples)
   (cd everparse; make $MAKEOPTS)
