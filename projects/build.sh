@@ -40,6 +40,7 @@ build() {
     )
   (cd steel; make $MAKEOPTS)
   (cd karamel; make $MAKEOPTS)
+  (cd FStar; make $MAKEOPTS -C examples)
   (cd everparse; make $MAKEOPTS)
   (cd hacl-star; ./tools/get_vale.sh; make $MAKEOPTS)
   (cd everquic-crypto; make $MAKEOPTS)
