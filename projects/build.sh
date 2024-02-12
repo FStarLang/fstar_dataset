@@ -46,7 +46,7 @@ build() {
   (cd merkle-tree; make $MAKEOPTS)
   (cd mitls-fstar; make $MAKEOPTS -C src/tls model-all)
   (cd Armada; make $MAKEOPTS -C experimental/lib)
-  (cd zeta; make $MAKEOPTS)
+  (cd zeta; make $MAKEOPTS extract-all)
 }
 
 check_z3
