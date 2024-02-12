@@ -25,3 +25,6 @@
 [submodule "projects/Armada"]
 	path = projects/Armada
 	url = https://github.com/gebner/Armada.git
+[submodule "projects/zeta"]
+	path = projects/zeta
+	url = https://github.com/project-everest/zeta.git

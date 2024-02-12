@@ -23,6 +23,7 @@ export VALE_HOME="$PROJECTS_HOME/vale";
 export EVERQUIC_HOME="$PROJECTS_HOME/everquic-crypto";
 export MERKLE_HOME="$PROJECTS_HOME/merkle-tree";
 export MITLS_HOME="$PROJECTS_HOME/mitls-fstar";
+export ZETA_HOME="$PROJECTS_HOME/zeta";
 export PATH="\$FSTAR_HOME/bin:\$PATH";
 export OTHERFLAGS=--record_options;
 EOF
@@ -45,6 +46,7 @@ build() {
   (cd merkle-tree; make $MAKEOPTS)
   (cd mitls-fstar; make $MAKEOPTS -C src/tls model-all)
   (cd Armada; make $MAKEOPTS -C experimental/lib)
+  (cd zeta; make $MAKEOPTS)
 }
 
 check_z3
