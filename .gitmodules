@@ -18,7 +18,7 @@
 	url = https://github.com/project-everest/everquic-crypto.git
 [submodule "projects/mitls-fstar"]
 	path = projects/mitls-fstar
-	url = https://github.com/project-everest/mitls-fstar.git
+	url = https://github.com/gebner/mitls-fstar.git
 [submodule "projects/steel"]
 	path = projects/steel
 	url = https://github.com/FStarLang/steel.git
