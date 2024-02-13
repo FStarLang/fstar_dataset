@@ -54,7 +54,8 @@ def main():
     pool = multiprocessing.Pool()
 
     fns = [ fn for dir in dirs for fn in glob.iglob(f'{dir}/**/*.fst*.checked', recursive=True, include_hidden=True) if not os.path.isdir(fn) and os.path.getsize(fn) > 0 ]
-    checked_deps = list(tqdm.tqdm(pool.imap_unordered(run_print_checked_deps, fns), total=len(fns), desc='Parsing checked files'))
+    checked_deps: list[tuple[str, Any, str]] = \
+        list(tqdm.tqdm(pool.imap_unordered(run_print_checked_deps, fns), total=len(fns), desc='Parsing checked files'))
     dig2checked: dict[str, list[tuple[str, Any]]] = {}
     for fn, j, dig in checked_deps:
         if dig not in dig2checked: dig2checked[dig] = []
@@ -76,14 +77,14 @@ def main():
         error = None
         for checked_fn, dep_info in dig2checked[dig]:
             basename = os.path.splitext(os.path.basename(checked_fn))[0]
-            if 'tls/cache/Karamel' in checked_fn:
-                error = f'Skipping {checked_fn} because module name clashes with the Model variant'
-                continue
             if basename.startswith('Test.fst'):
                 error = f'Skipping {checked_fn} because name causes lots of shadowing'
                 continue
             if ('FStar.' + basename) in expected_source_fns:
                 error = f'Skipping {checked_fn} because module name clashes with FStar.{basename} with the default open'
+                continue
+            if basename in ('AES.fst', 'SHA1.fst'):
+                error = f'Skipping {checked_fn} because it shadows modules in HACL*'
                 continue
             if basename in basename2files:
                 error = f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}'
@@ -114,7 +115,17 @@ def main():
         print(error)
         return False
 
-    for dig in dig2checked.keys(): resolve_checked(dig)
+    # We try to resolve the module names to checked files in a priority order,
+    # preferring real code over tests and examples.
+    def file_priority(fn) -> int:
+        if '/examples/' in fn: return -10
+        if '/tests/' in fn: return -10
+        if '/FStar/' in fn: return 10
+        if '/zeta/' in fn: return -1 # zeta duplicates some checked files for evercrypt
+        if '/tls/cache/Karamel/' in fn: return -5 # prefer the Model variant
+        return 0
+    for fn, _, dig in sorted(checked_deps, key = lambda item: -file_priority(item[0])):
+        resolve_checked(dig)
 
     for checked_fn, src_fn in tqdm.tqdm(basename2files.values(), desc = 'Copying files'):
         shutil.copy(src_fn, 'dataset/')
