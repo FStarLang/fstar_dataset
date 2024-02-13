@@ -96,13 +96,16 @@ def main():
             if src_fn is None:
                 error = f'Skipping {checked_fn} because of unavailable source file {basename}'
                 continue
+            dep_missing = False
             for dep in dep_info['deps_digest']:
                 if dep['module_name'] == 'source':
                     assert dep['digest'] == dep_info['source_digest'] # duplicate info
                 else:
                     if not resolve_checked(dep['digest']):
                         error = f'Skipping {checked_fn} because of unavailable dependency {dep["module_name"]}'
-                        continue
+                        dep_missing = True
+                        break
+            if dep_missing: continue
             if basename in basename2files:
                 error = f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}'
                 continue
