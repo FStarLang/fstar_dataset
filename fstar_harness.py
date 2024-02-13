@@ -136,6 +136,15 @@ class Result(TypedDict):
     full_solution: Optional[str]
     result: bool
     detail: Optional[PushResponse]
+    server_crashed: NotRequired[Any]
+
+class UnexpectedResponse(Exception):
+    @property
+    def response(self):
+        return self.args[0]
+
+def assert_response(condition: bool, response: Any):
+    if not condition: raise UnexpectedResponse(response)
 
 class FStarIdeProcess:
     pushed_until_lid: Optional[str] = None
@@ -150,7 +159,7 @@ class FStarIdeProcess:
 
         # Consume initialization message
         res = self._read_msg()
-        assert res['kind'] == 'protocol-info', res
+        assert_response(res['kind'] == 'protocol-info', res)
 
     def __enter__(self): return self
     def __exit__(self, exc_type, exc_value, traceback):
@@ -188,7 +197,7 @@ class FStarIdeProcess:
             if res['kind'] == 'message':
                 self.on_message(res)
             elif res['kind'] == 'response':
-                assert res['query-id'] == qid, (res, qid)
+                assert_response(res['query-id'] == qid, (res, qid))
                 # eprint(f'result {json.dumps(res)}')
                 return res
             else:
@@ -196,7 +205,7 @@ class FStarIdeProcess:
 
     def call_checked(self, query: str, args: Any):
         res = self.call_simple(query, args)
-        assert res['status'] == 'success', res
+        assert_response(res['status'] == 'success', res)
         return res
 
     def pop_partial_checked(self):
@@ -336,10 +345,15 @@ class FStarPool:
             except BaseException as e:
                 proc = None
                 cur_file = None
+                if isinstance(e, UnexpectedResponse):
+                    detail = e.response
+                else:
+                    detail = str(e)
                 item.on_done({
                     'name': item.defn,
                     'result': False,
                     'detail': None,
+                    'server_crashed': detail,
                     'goal_statement': None,
                     'full_solution': None,
                 })
