@@ -82,6 +82,9 @@ def main():
             if basename.startswith('Test.fst'):
                 error = f'Skipping {checked_fn} because name causes lots of shadowing'
                 continue
+            if ('FStar.' + basename) in expected_source_fns:
+                error = f'Skipping {checked_fn} because module name clashes with FStar.{basename} with the default open'
+                continue
             if basename in basename2files:
                 error = f'Skipping duplicate module {checked_fn} in favor of {basename2files[basename]}'
                 continue
