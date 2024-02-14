@@ -31,3 +31,6 @@
 [submodule "projects/noise-star"]
 	path = projects/noise-star
 	url = https://github.com/gebner/noise-star.git
+[submodule "projects/dice-star"]
+	path = projects/dice-star
+	url = https://github.com/verified-HRoT/dice-star.git

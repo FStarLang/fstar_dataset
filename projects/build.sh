@@ -49,6 +49,7 @@ build() {
   (cd Armada; make $MAKEOPTS -C experimental/lib)
   (cd zeta; make $MAKEOPTS extract-all)
   (cd noise-star; make $MAKEOPTS -C src verify)
+  (cd dice-star; make $MAKEOPTS -C src/dice_engine verify-all; make $MAKEOPTS -C src/test verify-all)
 }
 
 check_z3
