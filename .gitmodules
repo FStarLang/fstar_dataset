@@ -28,3 +28,6 @@
 [submodule "projects/zeta"]
 	path = projects/zeta
 	url = https://github.com/project-everest/zeta.git
+[submodule "projects/noise-star"]
+	path = projects/noise-star
+	url = https://github.com/gebner/noise-star.git

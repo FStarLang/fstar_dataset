@@ -48,6 +48,7 @@ build() {
   (cd mitls-fstar; make $MAKEOPTS -C src/tls model-all)
   (cd Armada; make $MAKEOPTS -C experimental/lib)
   (cd zeta; make $MAKEOPTS extract-all)
+  (cd noise-star; make $MAKEOPTS -C src verify)
 }
 
 check_z3
