@@ -120,7 +120,7 @@ let rec is_simple_type (t: typ) =
     (is_fv r || // Assume that referenced fvars have simple types
       (match (SS.compress r).n with
       | Tm_type _ -> true
-      | Tm_bvar {sort} -> (match (SS.compress sort).n with | Tm_type _ -> true | _ -> false)
+      | Tm_name {sort} -> (match (SS.compress sort).n with | Tm_type _ -> true | _ -> false)
       | Tm_app {hd; args} ->
         let rec all_simple_types = function
           | [] -> true
