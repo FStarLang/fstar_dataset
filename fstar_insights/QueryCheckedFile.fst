@@ -105,6 +105,16 @@ let rec is_propish (t : typ) =
     (* TODO(gabriel): it would be cool to check whether the type has type prop, but we don't load the dependencies yet *)
     || (bs <> [] && is_propish r)
 
+let is_type (t: typ) =
+  let bs, comp = U.arrow_formals_comp_ln t in
+  let n, r, a = U.comp_eff_name_res_and_args comp in
+  match (SS.compress r).n with
+  | Tm_type _ -> true
+  | Tm_fvar {fv_name={v}} ->
+    Ident.lid_equals v Parser.Const.prop_lid ||
+      Ident.lid_equals v Parser.Const.logical_lid
+  | _ -> false
+
 let rec is_simple_type (t: typ) =
   let bs, comp = U.arrow_formals_comp t in
   let rec all_simple_types = function
@@ -607,6 +617,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_div = is_div_typ data.t;
         is_proof = is_propish data.t;
         is_simply_typed = is_simple_type data.t;
+        is_type = is_type data.t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -633,6 +644,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_div = is_div_typ data.phi;
         is_proof = is_propish data.phi;
         is_simply_typed = is_simple_type data.phi;
+        is_type = is_type data.phi;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -660,6 +672,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_div = is_div_typ t;
         is_proof = is_propish t;
         is_simply_typed = is_simple_type t;
+        is_type = is_type t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -690,6 +703,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         is_div = is_div_typ data.t;
         is_proof = is_propish data.t;
         is_simply_typed = is_simple_type data.t;
+        is_type = is_type data.t;
         source_type = source_type;
         source_definition = source_definition;
         prompt = prompt;
@@ -754,6 +768,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
             is_div = is_div_typ lb.lbtyp;
             is_proof = is_propish lb.lbtyp;
             is_simply_typed = is_simple_type lb.lbtyp;
+            is_type = is_type lb.lbtyp;
             mutual_with = mutual_with;
             proof_features = maybe_rec;
             source_type = source_type;
