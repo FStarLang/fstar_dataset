@@ -17,6 +17,7 @@ fstar_env() {
 export FSTAR_HOME="$PROJECTS_HOME/FStar";
 export KRML_HOME="$PROJECTS_HOME/karamel";
 export STEEL_HOME="$PROJECTS_HOME/steel";
+export PULSE_HOME="$PROJECTS_HOME/pulse";
 export EVERPARSE_HOME="$PROJECTS_HOME/everparse";
 export HACL_HOME="$PROJECTS_HOME/hacl-star";
 export VALE_HOME="$PROJECTS_HOME/vale";
@@ -41,6 +42,7 @@ build() {
   (cd karamel; make $MAKEOPTS)
   (cd FStar; make $MAKEOPTS -C examples)
   (cd steel; make $MAKEOPTS test)
+  (cd pulse; make $MAKEOPTS; make $MAKEOPTS -C share/pulse/examples)
   (cd everparse; make $MAKEOPTS)
   (cd hacl-star; ./tools/get_vale.sh; make $MAKEOPTS)
   (cd everquic-crypto; make $MAKEOPTS)
