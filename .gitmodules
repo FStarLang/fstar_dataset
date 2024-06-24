@@ -33,7 +33,7 @@
 	url = https://github.com/gebner/noise-star.git
 [submodule "projects/dice-star"]
 	path = projects/dice-star
-	url = https://github.com/verified-HRoT/dice-star.git
+	url = https://github.com/gebner/dice-star.git
 [submodule "projects/pulse"]
 	path = projects/pulse
 	url = https://github.com/FStarLang/pulse.git
