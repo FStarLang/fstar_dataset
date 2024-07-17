@@ -11,7 +11,16 @@ ENV/
 env.bak/
 venv.bak/
 
-/dataset
+*dataset*
+proof_checker
 harness-checked.json
 
 /.vscode
+
+checked/
+count.txt
+fstarbundle/
+gather.py
+processed_file.txt
+huggingface/
+

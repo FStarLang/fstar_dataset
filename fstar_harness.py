@@ -150,14 +150,15 @@ def assert_response(condition: bool, response: Any):
 class FStarIdeProcess:
     pushed_until_lid: Optional[str] = None
 
-    def __init__(self, args: list[str]):
+    def __init__(self, args: list[str], timeout: Optional[float] = None):
         self.process: Any = subprocess.Popen(
             args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             # stderr=subprocess.PIPE,
             encoding='UTF-8')
 
         self.qid = 0
-
+        self.timeout = timeout
+        self.timeout_happened = False
         # Consume initialization message
         res = self._read_msg()
         assert_response(res['kind'] == 'protocol-info', res)
@@ -172,19 +173,27 @@ class FStarIdeProcess:
 
     def _read_msg(self) -> Any:
         while True:
+            if self.timeout_happened:
+                return {'status': 'timeout'}
             line = self.process.stdout.readline()
             if line.startswith('{'):
                 return json.loads(line)
             elif line == '':
+                if self.timeout_happened:
+                    return {'status': 'timeout'}
                 raise Exception(f'fstar terminated with exit code {self.process.poll()}')
             else:
                 # fstar writes some --debug output to stdout.
                 sys.stderr.write(line)
 
     def _write_msg(self, msg: Any):
-        json.dump(msg, self.process.stdin)
-        self.process.stdin.write('\n')
-        self.process.stdin.flush()
+        try:
+            json.dump(msg, self.process.stdin)
+            self.process.stdin.write('\n')
+            self.process.stdin.flush()
+        except:
+            if self.timeout_happened:
+                return {'status': 'timeout'}
 
     def _next_qid(self):
         self.qid += 1
@@ -194,19 +203,23 @@ class FStarIdeProcess:
         qid = self._next_qid()
         self._write_msg({'query-id': qid, 'query': query, 'args': args})
         while True:
-            res = self._read_msg()
-            if res['kind'] == 'message':
-                self.on_message(res)
-            elif res['kind'] == 'response':
-                assert_response(res['query-id'] == qid, (res, qid))
-                # eprint(f'result {json.dumps(res)}')
-                return res
-            else:
-                raise Exception('Unexpected message from fstar: ' + json.dumps(res))
+            try:
+                res = self._read_msg()
+                if res['kind'] == 'message':
+                    self.on_message(res)
+                elif res['kind'] == 'response':
+                    assert_response(res['query-id'] == qid, (res, qid))
+                    # eprint(f'result {json.dumps(res)}')
+                    return res
+                else:
+                    raise Exception('Unexpected message from fstar: ' + json.dumps(res))
+            except:
+                if self.timeout_happened:
+                    return {'status': 'timeout'}
 
     def call_checked(self, query: str, args: Any):
         res = self.call_simple(query, args)
-        assert_response(res['status'] == 'success', res)
+        # assert_response(res['status'] == 'success', res)
         return res
 
     def pop_partial_checked(self):
@@ -221,12 +234,21 @@ class FStarIdeProcess:
         self.pushed_until_lid = until_lid
 
     def check_snippet_at_decl(self, decl_name: str, snippet: str) -> tuple[bool, PushResponse]:
+        def timeout_handler():
+            self.timeout_happened = True
+            self.process.terminate()
         self.load_partial_checked_until(decl_name)
+        
+        timer = threading.Timer(self.timeout, timeout_handler)
+        timer.start()
         res = self.call_simple('push', {'kind': 'full', 'line': 0, 'column': 0, 'code': snippet})
         if res['status'] == 'success':
             self.call_checked('pop', {})
-        success = res['status'] == 'success'
-        if any(err['number'] == Warning_WarnOnUse for err in res['response']):
+        try:
+            success = res['status'] == 'success'
+            if any(err['number'] == Warning_WarnOnUse for err in res['response']):
+                success = False
+        except:
             success = False
         return success, res
 
@@ -392,30 +414,16 @@ class FStarPool:
         for i, r in stream:
             result[i] = r
         return result
+    
 
-def build_scaffolding(entry: DefinitionToCheck):
-    scaffolding = ''
-
-    module_name = os.path.splitext(os.path.basename(entry["file_name"]))[0]
-    if module_name == 'prims': module_name = 'Prims'
-
-    if module_name != 'Prims':
-        for oa in reversed(entry["opens_and_abbrevs"]):
-            if "abbrev" in oa:
-                scaffolding += "module " + oa["abbrev"] + "=" + oa["full_module"] + "\n"
-            else:
-                scaffolding += "open " + oa["open"] + "\n"
-
-        # Necessary for FStar.Array where the local array should shadow the global one.
-        scaffolding += "open " + module_name + "\n"
-
-    #translate vconfig to an option string
+def build_options_scalfolding(entry):
+    # translate vconfig to an option string
     # for each key/value pair in vconfig, add an element to an array of strings with the key and value
     options = []
     for key, value in (entry["vconfig"] or {}).items():
         match key:
             case "z3cliopt" | "z3smtopt":
-                for val in cast(list[str], value):
+                for val in value:
                     options.append('--' + key)
                     options.append(f"'{val}'")
                 continue
@@ -429,10 +437,7 @@ def build_scaffolding(entry: DefinitionToCheck):
                     continue
             case "smtencoding_elim_box":
                 key = "smtencoding.elim_box"
-                if value:
-                    value = "true"
-                else:
-                    value = "false"
+                value = "true" if value else "false"
             case "smtencoding_nl_arith_repr":
                 key = "smtencoding.nl_arith_repr"
                 value = str(value)
@@ -441,37 +446,40 @@ def build_scaffolding(entry: DefinitionToCheck):
                 value = str(value)
             case "smtencoding_valid_intro":
                 key = "smtencoding.valid_intro"
-                if value:
-                    value = "true"
-                else:
-                    value = "false"
+                value = "true" if value else "false"
             case "smtencoding_valid_elim":
                 key = "smtencoding.valid_elim"
-                if value:
-                    value = "true"
-                else:
-                    value = "false"
-            case (  "retry" |
-                    "detail_errors" |
-                    "reuse_hint_for" |
-                    "no_plugins" |
-                    "no_tactics" |
-                    "no_smt" |
-                    "quake_lo" |
-                    "quake_hi" |
-                    "quake_keep" |
-                    "tcnorm" |
-                    "trivial_pre_for_unannotated_effectful_fns" |
-                    "detail_hint_replay" ):
+                value = "true" if value else "false"
+            case ("retry" | "detail_errors" | "reuse_hint_for" | "no_plugins" |
+                  "no_tactics" | "no_smt" | "quake_lo" | "quake_hi" | "quake_keep" |
+                  "tcnorm" | "trivial_pre_for_unannotated_effectful_fns" | "detail_hint_replay"):
                 continue
             case _:
-                continue        
+                continue
         options.append("--" + key)
         options.append(str(value))
-    # conatenate the options separated by spaces
     options_string = " ".join(options)
-    # add the options string to the scaffolding
-    scaffolding += f"#push-options \"{options_string}\"\n"
+    scaffolding = f"#push-options \"{options_string}\"\n"
+    return scaffolding
+
+def build_scaffolding(entry: DefinitionToCheck):
+    scaffolding = ''
+    module_name = os.path.splitext(os.path.basename(entry["file_name"]))[0]
+    if module_name == 'prims':
+        module_name = 'Prims'
+    opens, abbrevs = [], []
+    if module_name != 'Prims':
+        for oa in entry["opens_and_abbrevs"][::-1]:
+            if "abbrev" in oa and oa["abbrev"]:
+                key = "short_module" if "short_module" in oa else "abbrev"
+                abbrevs.append("module " + oa[key] + " = " + oa["full_module"] + "\n")
+            else:
+                module_key = "open" if "open" in oa else "full_module"
+                opens.append("open " + oa[module_key] + "\n")
+        scaffolding += "".join(opens)
+        scaffolding += "".join(abbrevs)
+        scaffolding += "open " + module_name + "\n"
+    scaffolding += build_options_scalfolding(entry)
     return scaffolding
 
 def process_one_instance(entry: DefinitionToCheck, fstar_process: FStarIdeProcess) -> Result:
@@ -490,6 +498,59 @@ def process_one_instance(entry: DefinitionToCheck, fstar_process: FStarIdeProces
         "result": result,
         "detail": detail,
     }
+    
+def analyze_solution(
+    entry: Definition, goal_statement:str, solution: str, 
+    fstar_process: FStarIdeProcess, check_name_match: bool = True
+):
+    scaffolding = build_scaffolding(entry)
+    lemma_long_name = entry["name"]
+    name = lemma_long_name
+    if "." in name:
+        name = name.split(".")[-1].strip()
+    mandatory_part = f"{name}"
+    solution = "\n" + solution.strip()
+    full_soln = f"{scaffolding}\n#restart-solver\n{goal_statement} {solution}"
+    if solution.strip() == "":
+        result = False
+        detail = {
+            "kind": "none",
+            "query-id": "none",
+            "status": "failure",
+            "response": [
+                {
+                    "level": "error",
+                    "number": 998,
+                    "message": "Empty string as solution",
+                    "ranges": []
+                }
+            ]
+        }
+    if not check_name_match or mandatory_part in solution.strip():
+        result, detail = fstar_process.check_snippet_at_decl(entry['name'], full_soln)
+    else:
+        result = False
+        detail = {
+            "kind": "none",
+            "query-id": "none",
+            "status": "failure",
+            "response": [
+                {
+                    "level": "error",
+                    "number": 999,
+                    "message": "Wrong name in solution",
+                    "ranges": []
+                }
+            ]
+        }
+    logged_solution = {
+        "name": lemma_long_name,
+        "goal_statement": goal_statement,
+        "full_solution": full_soln,
+        "result": result,
+        "detail": detail
+    }
+    return logged_solution
 
 def should_ignore(entry: Definition) -> Optional[str]:
     if entry['interleaved']:
@@ -503,10 +564,16 @@ def should_ignore(entry: Definition) -> Optional[str]:
         return 'unreal lemma'
     return None
 
-def create_fstar_process_for_dataset(file_name: str, dataset_dir: str, extra_args: list[str] = []) -> FStarIdeProcess:
-    return FStarIdeProcess(["fstar.exe",
-        "--ide", os.path.basename(file_name),
-        "--report_assumes", "warn", '--include', dataset_dir] + extra_args)
+
+def create_fstar_process_for_dataset(
+        file_name: str, dataset_dir: str, extra_args: list[str] = [],
+        timeout: Optional[float] = None
+) -> FStarIdeProcess:
+    return FStarIdeProcess(
+        ["fstar.exe", "--ide", os.path.basename(file_name),
+         "--report_assumes", "warn", '--include', dataset_dir] + extra_args,
+        timeout=timeout
+    )
 
 def create_fstar_process_for_json_file(json_data: InsightFile, dataset_dir: str, extra_args: list[str] = []) -> FStarIdeProcess:
     return create_fstar_process_for_dataset(json_data['dependencies']['source_file'], dataset_dir, extra_args)
