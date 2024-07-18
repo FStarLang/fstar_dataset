@@ -25,7 +25,7 @@ against sample proofs collected from the dataset. -->
 
 # Preliminaries
 
-1. Make sure the [`helpers`](./helpers/) folder is present in this directory.
+1. Make sure the [`helpers`](./helpers/) folder is present in this directory. Initially the release contains `helpers.zip` which needs to be extracted. Run `unzip helpers.zip` if `helpers` directory is not present.
 2. Add [`helpers/bin`](./helpers/bin/) to your `PATH`, i.e., `export PATH=$(pwd)/helpers/bin:$PATH`.
 3. Make sure `fstar.exe --version` works, and the output is `F* 2023.09.03~dev`.
 
