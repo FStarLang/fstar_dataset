@@ -27,7 +27,7 @@ against sample proofs collected from the dataset. -->
 
 1. Download and exatract `helpers.zip` from the release. **We assume the extracted `helpers` directory is present in the root of this repository.** (Change the parameter of `--dataset_dir` in the evaluation script accordingly.)
 2. Add `helpers/bin` to your `PATH`, i.e., `export PATH=<PATH TO THE EXTRACTED HELPER DIRECTORY>/bin:$PATH`.
-3. Make sure `fstar.exe --version` works, and the output is `F* 2023.09.03~dev`.
+3. Make sure `fstar.exe --version` works, and the output is `F* 2024.01.13~dev`.
 
 # Preparing Evaluation Data
 For evaluation, we need the entire example dictionary in the dataset. For evaluating generated F* definition(s) put them as a list of strings in the example disctionaries. 
