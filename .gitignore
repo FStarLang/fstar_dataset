@@ -23,4 +23,7 @@ fstarbundle/
 gather.py
 processed_file.txt
 huggingface/
+*helper*
+*.log
+*.json
 
