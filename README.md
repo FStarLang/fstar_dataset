@@ -66,6 +66,6 @@ python evaluate.py \
    --dataset_dir $(pwd)/helpers/support_files \
    --solution_key SOLUTION_KEY (default is generated_response/responses) \
    --output_dir OUTPUT_DIR (optional) \
-   --output OUTPUT_FILE (optional)
+   --output OUTPUT_FILE (Only the name of the output file, optional)
 ```
-The `evaluate.py` script will output the evaluation results in the `OUTPUT_FILE` if provided, otherwise it will print the results on the console.
+The `evaluate.py` script will output the evaluation results in the `OUTPUT_DIR/OUTPUT_FILE` if `OUTPUT_DIR/` is provided, otherwise it will print the results on the console.
