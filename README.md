@@ -25,8 +25,8 @@ against sample proofs collected from the dataset. -->
 
 # Preliminaries
 
-1. Make sure the [`helpers`](./helpers/) folder is present in this directory. Initially the release contains `helpers.zip` which needs to be extracted. Run `unzip helpers.zip` if `helpers` directory is not present.
-2. Add [`helpers/bin`](./helpers/bin/) to your `PATH`, i.e., `export PATH=$(pwd)/helpers/bin:$PATH`.
+1. Download and exatract `helpers.zip` from the release. **We assume the extracted `helpers` directory is present in the root of this repository.** (Change the parameter of `--dataset_dir` in the evaluation script accordingly.)
+2. Add `helpers/bin` to your `PATH`, i.e., `export PATH=<PATH TO THE EXTRACTED HELPER DIRECTORY>/bin:$PATH`.
 3. Make sure `fstar.exe --version` works, and the output is `F* 2023.09.03~dev`.
 
 # Preparing Evaluation Data
@@ -63,7 +63,7 @@ To run the evaluation, you can use the following command
 ```bash
 python evaluate.py \
    --input_files INPUT_FILES (could be multiple) \
-   --dataset_dir $(pwd)/helpers/support_files \
+   --dataset_dir <PATH TO THE EXTRACTED HELPER DIRECTORY>/support_files \
    --solution_key SOLUTION_KEY (default is generated_response/responses) \
    --output_dir OUTPUT_DIR (optional) \
    --output OUTPUT_FILE (Only the name of the output file, optional)
