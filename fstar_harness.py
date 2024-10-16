@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# --------------------------------------------------------------------------------------------
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See LICENSE in the project root for license information.
+# --------------------------------------------------------------------------------------------
+
 from typing import Generic, Literal, NotRequired, TypeVar, TypedDict, Any, Optional, Callable, Iterable, Union, cast
 import subprocess
 import json
