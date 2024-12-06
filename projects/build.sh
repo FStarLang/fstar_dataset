@@ -35,15 +35,22 @@ export OTHERFLAGS=--record_options;
 EOF
 }
 
-build() {
+build_prep () {
   eval $(fstar_env)
   cd "$PROJECTS_HOME"
   set -x
+}
+
+build_fstar() {
   (cd FStar
     make $MAKEOPTS
     make $MAKEOPTS boot
     touch -r ocaml/_build/default/fstar/main.exe bin/fstar.exe # prevent useless rebuilds in HACL*
     )
+}
+
+build() {
+  build_fstar;
   (cd karamel; make $MAKEOPTS)
   (cd FStar; make $MAKEOPTS -C examples)
   (cd steel; make $MAKEOPTS test)
@@ -63,7 +70,8 @@ check_z3
 MAKEOPTS="-j$(nproc)"
 
 case "${1:-build}" in
-  build) build ;;
+  build) build_prep; build ;;
+  build_fstar) build_prep; build_fstar ;;
   env) fstar_env ;;
-  *) echo "Usage: ./build.sh (build|env)"; exit 1 ;;
+  *) echo "Usage: ./build.sh (build|build_fstar|env)"; exit 1 ;;
 esac

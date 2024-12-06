@@ -17,7 +17,7 @@ open FStar.Compiler
 open FStar.Compiler.Effect
 open FStar.CheckedFiles
 open FStar.Compiler.List
-module Set = FStar.Compiler.Set
+module Set = FStar.Compiler.RBSet
 module BU = FStar.Compiler.Util
 module SMT = FStar.SMTEncoding.Solver
 module TcEnv = FStar.TypeChecker.Env
@@ -610,6 +610,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         interleaved = interleaved;
         name = Ident.string_of_lid data.lid;
         type_ = P.term_to_string data.t;
+        free_names_in_type = List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars data.t));
         definition1 = "<DECLARETYP>";
         premises = [];
         effect_ = "";
@@ -640,6 +641,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         interleaved = interleaved;
         name = Ident.string_of_lid data.lid;
         type_ = P.term_to_string data.phi;
+        free_names_in_type = List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars data.phi));
         definition1 = "<ASSUME>";
         premises = [];
         effect_ = "";
@@ -668,6 +670,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         interleaved = interleaved;
         name = Ident.string_of_lid lid;
         type_ = P.term_to_string arr;
+        free_names_in_type = List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars arr));
         definition1 = "<INDUCTIVETYP>";
         premises = [];
         effect_ = "";
@@ -699,6 +702,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
         interleaved = interleaved;
         name = name;
         type_ = P.term_to_string data.t;
+        free_names_in_type = List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars data.t));
         definition1 = "<DATACON>";
         premises = List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars data.t));
         effect_ = "";
@@ -764,6 +768,7 @@ let rec functions_called_by_user_in_def (file_name: string) (modul: list sigelt)
             interleaved = interleaved;
             name = name;
             type_ = P.term_to_string lb.lbtyp;
+            free_names_in_type = List.map Ident.string_of_lid (Set.elems (FStar.Syntax.Free.fvars lb.lbtyp));
             definition1 = P.term_to_string lb.lbdef;
             premises
             =

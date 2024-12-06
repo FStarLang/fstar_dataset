@@ -89,6 +89,7 @@ class Definition(DefinitionToCheck):
     is_simply_typed: bool # Whether the type is polymorphically simply typed (e.g. `t:Type -> list t -> nat`)
     is_type: bool # Whether the definition is a type (i.e., the type is of the form `... -> Type/logical/prop`)
     type: str
+    free_names_in_type: list[str] #all the symbols referenced in the type
     prompt: str
     expected_response: str
 

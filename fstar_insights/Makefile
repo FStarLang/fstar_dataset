@@ -6,7 +6,7 @@
 .PHONY: all
 all: QueryCheckedFile.fst.config.json exe
 
-FSTAR_HOME ?= $(realpath $(dir $(shell which fstar.exe))/..)
+FSTAR_HOME = $(realpath ../projects/FStar)
 FSTAR_EXE = $(FSTAR_HOME)/bin/fstar.exe
 
 # Assume FSTAR_HOME points to the F* source tree

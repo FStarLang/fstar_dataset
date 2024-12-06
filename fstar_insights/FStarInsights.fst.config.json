@@ -1,0 +1,30 @@
+{
+    "fstar_exe": "../projects/FStar/bin/fstar.exe",
+    "options": [
+      "--lax",
+      "--MLish",
+      "--no_location_info",
+      "--warn_error", "-271-272-241-319-274",
+      "--odir", "./ocaml",
+      "--cache_dir", "../projects/FStar/src/.cache.boot",
+      "--already_cached", "Prims,FStar",
+      "--cache_checked_modules"
+    ],
+    "include_dirs": [
+        "../projects/FStar/src/basic",
+        "../projects/FStar/src/class",
+        "../projects/FStar/src/data",
+        "../projects/FStar/src/extraction",
+        "../projects/FStar/src/fstar",
+        "../projects/FStar/src/parser",
+        "../projects/FStar/src/prettyprint",
+        "../projects/FStar/src/reflection",
+        "../projects/FStar/src/smtencoding",
+        "../projects/FStar/src/syntax",
+        "../projects/FStar/src/tactics",
+        "../projects/FStar/src/tosyntax",
+        "../projects/FStar/src/typechecker",
+        "../projects/FStar/src/tests"
+    ]
+  }
+  
